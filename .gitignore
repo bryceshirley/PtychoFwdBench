@@ -1,6 +1,38 @@
-/.idea
-/build
-/dist
-/pyram.egg-info
+# --- Project Specific Outputs ---
+# Ignore the results folder where benchmark figures and configs are saved
+results/
+
+# Ignore generated images and transient data files
+*.png
+*.pff
+pyram_ptycho/pyram/Tests/tl.line
+
+# --- Python / Build Artifacts ---
+# Ignore byte-compiled files
 __pycache__/
-/pyram/Tests/tl.line
+*.py[cod]
+*$py.class
+
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
+# If any legacy pyram eggs exist
+pyram.egg-info/
+
+# --- Virtual Environments ---
+# uv creates .venv by default
+.venv/
+venv/
+env/
+ENV/
+
+# --- IDE Settings ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- System Files ---
+.DS_Store
+Thumbs.db

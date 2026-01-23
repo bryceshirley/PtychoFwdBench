@@ -1,0 +1,33 @@
+experiment:
+  name: "BRANCHING"
+  description: "Neuronal/Dendritic network with continuous branching paths."
+
+physics:
+  wavelength_um: 0.635
+  c0: 1500.0
+  probe_dia_um: 8.0
+  probe_focus_um: 0.0
+
+grid:
+  n_physical: 1024
+  n_padding: 256
+  physical_width_um: 150.0
+
+sample:
+  type: "BRANCHING"
+  thickness_um: 200.0
+  n_prop_fine: 4000
+  params:
+    n_background: 1.00
+    delta_n: 0.04
+    initial_thickness: 7.0
+    branching_prob: 0.006
+    split_angle: 0.20
+    repulsion: 0.005
+
+solver:
+  pade_order: 8
+
+benchmark:
+  step_counts: [64, 128, 256]
+  save_beam_idx: 0

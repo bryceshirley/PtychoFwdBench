@@ -1,0 +1,31 @@
+experiment:
+  name: "BLOBS"
+  description: "Standard random soft blobs."
+
+physics:
+  wavelength_um: 0.635
+  c0: 1500.0
+  probe_dia_um: 10.0
+  probe_focus_um: -10.0  # Divergent
+
+grid:
+  n_physical: 1024
+  n_padding: 256
+  physical_width_um: 150.0
+
+sample:
+  type: "BLOBS"
+  thickness_um: 40.0
+  n_prop_fine: 1024
+  params:
+    n_background: 1.0
+    delta_n: 0.05
+    beta_n: 0.005
+    n_blobs: 100
+
+solver:
+  pade_order: 8
+
+benchmark:
+  step_counts: [8, 16, 32, 64]
+  save_beam_idx: 0

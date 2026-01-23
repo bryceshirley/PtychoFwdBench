@@ -6,9 +6,31 @@ from numba import jit
 
 
 @jit(nopython=True, cache=True)
-def matrc(k0, dz, iz, jz, nz, np, f1, f2, f3, ksq, alpw, alpb, ksqw, ksqb,
-          rhob, r1, r2, r3, s1, s2, s3, pd1, pd2):
-
+def matrc(
+    k0,
+    dz,
+    iz,
+    jz,
+    nz,
+    np,
+    f1,
+    f2,
+    f3,
+    ksq,
+    alpw,
+    alpb,
+    ksqw,
+    ksqb,
+    rhob,
+    r1,
+    r2,
+    r3,
+    s1,
+    s2,
+    s3,
+    pd1,
+    pd2,
+):
     """
     The tridiagonal matrices
     """
@@ -54,7 +76,6 @@ def matrc(k0, dz, iz, jz, nz, np, f1, f2, f3, ksq, alpw, alpb, ksqw, ksqb,
     # Discretization by Galerkin's method
 
     for i in range(i1, i2 + 1):
-
         c1 = cfact * f1[i] * (f2[i - 1] + f2[i]) * f3[i - 1]
         c2 = -cfact * f1[i] * (f2[i - 1] + 2 * f2[i] + f2[i + 1]) * f3[i]
         c3 = cfact * f1[i] * (f2[i] + f2[i + 1]) * f3[i + 1]
@@ -72,7 +93,6 @@ def matrc(k0, dz, iz, jz, nz, np, f1, f2, f3, ksq, alpw, alpb, ksqw, ksqb,
 
     # The matrix decomposition
     for j in range(np):
-
         for i in range(i1, iz + 1):
             rfact = 1 / (r2[i, j] - r1[i, j] * r3[i - 1, j])
             r1[i, j] *= rfact

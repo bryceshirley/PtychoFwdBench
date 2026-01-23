@@ -1,0 +1,33 @@
+experiment:
+  name: "FIBERS"
+  description: "Dense bundle of wavy fibers simulating muscle or nerve tissue."
+
+physics:
+  wavelength_um: 0.635
+  c0: 1500.0
+  probe_dia_um: 20.0
+  probe_focus_um: 0.0
+
+grid:
+  n_physical: 1024
+  n_padding: 256
+  physical_width_um: 150.0
+
+sample:
+  type: "FIBERS"
+  thickness_um: 200.0
+  n_prop_fine: 2000
+  params:
+    n_background: 1.33
+    delta_n: 0.03
+    beta_n: 0.01
+    fiber_rad_um: 1.0
+    density: 0.6
+    waviness_um: 1.2
+
+solver:
+  pade_order: 8
+
+benchmark:
+  step_counts: [64, 128, 256]
+  save_beam_idx: -1  # Save the last one
