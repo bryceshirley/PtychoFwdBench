@@ -2,12 +2,10 @@
 solve function definition
 """
 
-from numba import jit, int64, complex128
+from numba import jit
 
 
-@jit((complex128[:], complex128[:], complex128[:, :], complex128[:, :],
-      complex128[:, :], complex128[:, :], complex128[:, :], complex128[:, :],
-      int64, int64, int64), nopython=True)
+@jit(nopython=True, cache=True)
 def solve(u, v, s1, s2, s3, r1, r2, r3, iz, nz, np):
 
     """

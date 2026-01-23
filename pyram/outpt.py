@@ -3,12 +3,10 @@ outpt function definition
 """
 
 import numpy
-from numba import jit, int64, float64, complex128
+from numba import jit
 
 
-@jit(int64[:](float64, int64, int64, int64, int64, float64[:],
-              complex128[:], float64, int64, float64[:], float64[:, :],
-              complex128[:], complex128[:, :]), nopython=True)
+@jit(nopython=True, cache=True)
 def outpt(r, mdr, ndr, ndz, tlc, f3, u, _dir, ir, tll, tlg, cpl, cpg):
 
     """

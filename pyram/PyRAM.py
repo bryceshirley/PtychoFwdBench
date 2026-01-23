@@ -260,12 +260,15 @@ class PyRAM:
         self.pd1 = numpy.zeros(self._np, dtype=numpy.complex128)
         self.pd2 = numpy.zeros(self._np, dtype=numpy.complex128)
 
-        self.alpw = numpy.zeros(self.nz + 2)
-        self.alpb = numpy.zeros(self.nz + 2)
-        self.f1 = numpy.zeros(self.nz + 2)
-        self.f2 = numpy.zeros(self.nz + 2)
-        self.f3 = numpy.zeros(self.nz + 2)
-        self.ksqw = numpy.zeros(self.nz + 2)
+        # --- UPDATES START HERE ---
+        # These MUST be complex to hold info derived from complex velocity
+        self.alpw = numpy.zeros(self.nz + 2, dtype=numpy.complex128) # UPDATED
+        self.alpb = numpy.zeros(self.nz + 2, dtype=numpy.complex128) # UPDATED
+        self.f1 = numpy.zeros(self.nz + 2, dtype=numpy.complex128)   # UPDATED
+        self.f2 = numpy.zeros(self.nz + 2, dtype=numpy.complex128)   # UPDATED
+        self.f3 = numpy.zeros(self.nz + 2, dtype=numpy.complex128)   # UPDATED
+        self.ksqw = numpy.zeros(self.nz + 2, dtype=numpy.complex128) # UPDATED
+        # --- UPDATES END ---
         nvr = int(numpy.floor(self._rmax / (self._dr * self._ndr)))
         self._rmax = nvr * self._dr * self._ndr
         nvz = int(numpy.floor(self.nzplt / self._ndz))
@@ -304,9 +307,25 @@ class PyRAM:
         attnf = 10  # 10dB/wavelength at floor
 
         z = numpy.linspace(0, self._zmax, self.nz + 2)
-        self.cw = numpy.interp(z, self._z_ss, self._cw[:, self.ss_ind],
-                               left=self._cw[0, self.ss_ind],
-                               right=self._cw[-1, self.ss_ind])
+
+        # numpy.interp casts to float, so we handle Real and Imag separately
+        cw_real = numpy.real(self._cw)
+        cw_imag = numpy.imag(self._cw)
+
+        interp_real = numpy.interp(z, self._z_ss, cw_real[:, self.ss_ind],
+                                   left=cw_real[0, self.ss_ind],
+                                   right=cw_real[-1, self.ss_ind])
+        
+        # Only do imaginary interpolation if the input is actually complex
+        if numpy.iscomplexobj(self._cw):
+            interp_imag = numpy.interp(z, self._z_ss, cw_imag[:, self.ss_ind],
+                                       left=cw_imag[0, self.ss_ind],
+                                       right=cw_imag[-1, self.ss_ind])
+            self.cw = interp_real + 1j * interp_imag
+        else:
+            self.cw = interp_real
+        # --- UPDATE END ---
+
         self.cb = numpy.interp(z, self._z_sb, self._cb[:, self.sb_ind],
                                left=self._cb[0, self.sb_ind],
                                right=self._cb[-1, self.sb_ind])

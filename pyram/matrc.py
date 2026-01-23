@@ -2,14 +2,10 @@
 solve function definition
 """
 
-from numba import jit, float64, int64, complex128
+from numba import jit
 
 
-@jit((float64, float64, int64, int64, int64, int64, float64[:], float64[:],
-     float64[:], complex128[:], float64[:], float64[:], float64[:],
-     complex128[:], float64[:], complex128[:, :], complex128[:, :],
-     complex128[:, :], complex128[:, :], complex128[:, :], complex128[:, :],
-     complex128[:], complex128[:]), nopython=True)
+@jit(nopython=True, cache=True)
 def matrc(k0, dz, iz, jz, nz, np, f1, f2, f3, ksq, alpw, alpb, ksqw, ksqb,
           rhob, r1, r2, r3, s1, s2, s3, pd1, pd2):
 
