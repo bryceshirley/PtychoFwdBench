@@ -36,6 +36,8 @@ jobs:
           uv run pytest tests/ -v
 
       - name: Run PyRAM Core Tests (Unittest)
+        env:
+          PYTHONPATH: ${{ github.workspace }}/pyram_ptycho
         run: |
           # Run discovery on the internal PyRAM tests directory
           uv run python -m unittest discover -s pyram_ptycho/pyram/Tests -p "Test*.py" -v
