@@ -30,18 +30,33 @@ sample:
   # Sample Generator Paramters
   params:
     n_background: 1.0
-    delta_n: 0.05         # Scattering strength
+    delta_n: 0.01         # Scattering strength
     beta_n: 0.005          # Absorption
     n_blobs: 300
-    blob_r_range_um: [0.2, 0.5]
 
 # Benchmarking List
 # List as many solvers as desired for comparison
 solvers:
-  - name: "Pade (Order 8)" # Arbitary Name
+  - name: "Pade (Order 8)"
     type: "PADE"
     solver_params:
       pade_order: 8
+
+  - name: "Pade (Order 4)"
+    type: "PADE"
+    solver_params:
+      pade_order: 4
+
+  - name: "Pade (Order 2)"
+    type: "PADE"
+    solver_params:
+      pade_order: 2
+
+  - name: "Multislice (DST, Symmetric)"
+    type: "MULTISLICE"
+    solver_params:
+      transform_type: "DST"
+      symmetric: True
 
   - name: "Multislice (DST)"
     type: "MULTISLICE"
@@ -50,5 +65,5 @@ solvers:
       symmetric: false
 
 benchmark:
-  step_counts: [8, 16, 32, 64]
+  step_counts: [64, 128, 256, 512]
   save_beam_idx: 0
