@@ -25,6 +25,8 @@ dependencies = [
     "scipy",
     "matplotlib",
     "pyyaml",
+    "ruff>=0.14.14",
+    "pytest>=8.4.2",
 ]
 
 [build-system]
