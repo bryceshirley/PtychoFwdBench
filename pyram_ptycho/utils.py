@@ -3,6 +3,8 @@ import os
 import shutil
 from datetime import datetime
 import subprocess
+from typing import Optional, Tuple
+import numpy as np
 
 
 def get_git_revision_hash() -> str:
@@ -48,3 +50,61 @@ def setup_logging(out_dir: str):
         force=True,
     )
     logging.info(f"Log initialized: {log_file}")
+
+
+# ==========================================
+# I/O Helpers for Ground Truth
+# ==========================================
+
+
+def save_ground_truth(
+    filepath: str,
+    n_map_fine: np.ndarray,
+    psi_0: np.ndarray,
+    psi_gt: np.ndarray,
+    beam_gt: Optional[np.ndarray],
+):
+    """Saves the high-res inputs and results to an .npz file."""
+    logging.info(f"Saving Ground Truth to: {filepath}")
+
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+
+    data_dict = {
+        "n_map_fine": n_map_fine,
+        "psi_0": psi_0,
+        "psi_gt": psi_gt,
+    }
+    if beam_gt is not None:
+        data_dict["beam_gt"] = beam_gt
+    else:
+        # Save a placeholder or handle None on load
+        data_dict["beam_gt"] = np.array([])
+
+    np.savez_compressed(filepath, **data_dict)
+
+
+def load_ground_truth(
+    filepath: str,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
+    """Loads n_map_fine, psi_0, psi_gt, and beam_gt from an .npz file."""
+    logging.info(f"Loading Ground Truth from: {filepath}")
+
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(
+            f"The specified Ground Truth file was not found: {filepath}"
+        )
+
+    with np.load(filepath) as data:
+        n_map_fine = data["n_map_fine"]
+        psi_0 = data["psi_0"]
+        psi_gt = data["psi_gt"]
+
+        # Handle optional beam_gt
+        beam_gt = None
+        if "beam_gt" in data:
+            arr = data["beam_gt"]
+            if arr.size > 0:
+                beam_gt = arr
+
+    return n_map_fine, psi_0, psi_gt, beam_gt

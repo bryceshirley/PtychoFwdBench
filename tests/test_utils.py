@@ -1,11 +1,15 @@
 import os
 import logging
 import subprocess
+import numpy as np
+import pytest
 from unittest import mock
 from pyram_ptycho.utils import (
     get_git_revision_hash,
     setup_output_directory,
     setup_logging,
+    save_ground_truth,
+    load_ground_truth,
 )
 
 # =============================================================================
@@ -62,8 +66,6 @@ def test_setup_output_directory(tmp_path):
         # We need to ensure results are written to tmp_path, not the real 'results' dir
         # We patch 'results' in the join call implicitly by just checking the returned path
         # But setup_output_directory hardcodes "results".
-        # To make this clean without modifying code, we run it and clean up,
-        # OR we temporarily chdir to tmp_path. Let's chdir.
 
         original_cwd = os.getcwd()
         os.chdir(tmp_path)
@@ -110,7 +112,6 @@ def test_setup_logging(tmp_path):
     root_logger = logging.getLogger()
     for handler in root_logger.handlers:
         handler.flush()
-        # Close file handlers so we can read the file safely on Windows/strict OS
         if isinstance(handler, logging.FileHandler):
             handler.close()
 
@@ -121,3 +122,101 @@ def test_setup_logging(tmp_path):
     content = log_file.read_text()
     assert "Log initialized" in content
     assert test_msg in content
+
+
+# =============================================================================
+# 4. DATA I/O TESTS (save_ground_truth / load_ground_truth)
+# =============================================================================
+
+
+def test_save_ground_truth_full(tmp_path):
+    """Test saving all ground truth arrays including beam history."""
+    # 1. Setup dummy data
+    file_path = tmp_path / "test_gt.npz"
+    n_map_fine = np.ones((10, 10))
+    psi_0 = np.zeros((10,), dtype=complex)
+    psi_gt = np.random.rand(10) + 1j * np.random.rand(10)
+    beam_gt = np.ones((10, 5))
+
+    # 2. Execute Save
+    save_ground_truth(str(file_path), n_map_fine, psi_0, psi_gt, beam_gt)
+
+    # 3. Verify file exists
+    assert file_path.exists()
+
+    # 4. Verify content manually
+    with np.load(file_path) as data:
+        np.testing.assert_array_equal(data["n_map_fine"], n_map_fine)
+        np.testing.assert_array_equal(data["psi_0"], psi_0)
+        np.testing.assert_array_equal(data["psi_gt"], psi_gt)
+        np.testing.assert_array_equal(data["beam_gt"], beam_gt)
+
+
+def test_save_ground_truth_no_beam(tmp_path):
+    """Test saving ground truth when beam_gt is None."""
+    file_path = tmp_path / "test_gt_no_beam.npz"
+    n_map_fine = np.ones((5, 5))
+    psi_0 = np.zeros((5,))
+    psi_gt = np.zeros((5,))
+
+    # Execute Save with None for beam_gt
+    save_ground_truth(str(file_path), n_map_fine, psi_0, psi_gt, beam_gt=None)
+
+    # Verify that beam_gt is saved as an empty array (implementation detail)
+    with np.load(file_path) as data:
+        assert "beam_gt" in data
+        assert data["beam_gt"].size == 0
+
+
+def test_load_ground_truth_success(tmp_path):
+    """Test loading a valid ground truth file."""
+    # 1. Setup: Create a real .npz file
+    file_path = tmp_path / "load_test.npz"
+    n_map_in = np.ones((8, 8))
+    psi_0_in = np.ones((8,))
+    psi_gt_in = np.random.rand(8)
+    # Simulate a file that HAS beam data
+    beam_gt_in = np.random.rand(8, 2)
+
+    np.savez_compressed(
+        file_path,
+        n_map_fine=n_map_in,
+        psi_0=psi_0_in,
+        psi_gt=psi_gt_in,
+        beam_gt=beam_gt_in,
+    )
+
+    # 2. Execute Load
+    n_map, psi0, gt, beam = load_ground_truth(str(file_path))
+
+    # 3. Assertions
+    np.testing.assert_array_equal(n_map, n_map_in)
+    np.testing.assert_array_equal(psi0, psi_0_in)
+    np.testing.assert_array_equal(gt, psi_gt_in)
+    np.testing.assert_array_equal(beam, beam_gt_in)
+
+
+def test_load_ground_truth_handles_missing_beam(tmp_path):
+    """Test loading a file that has empty beam data returns None."""
+    file_path = tmp_path / "load_empty_beam.npz"
+
+    # Save with empty beam array
+    np.savez_compressed(
+        file_path,
+        n_map_fine=np.zeros(1),
+        psi_0=np.zeros(1),
+        psi_gt=np.zeros(1),
+        beam_gt=np.array([]),  # Empty
+    )
+
+    # Execute Load
+    _, _, _, beam = load_ground_truth(str(file_path))
+
+    # Assert beam is None (as per your logic: if arr.size > 0: beam_gt = arr)
+    assert beam is None
+
+
+def test_load_ground_truth_file_not_found():
+    """Test that loading a non-existent file raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        load_ground_truth("non_existent_file.npz")

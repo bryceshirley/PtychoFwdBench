@@ -23,13 +23,17 @@ sample:
     solver_params:
       pade_order: 8       # Very high accuracy for reference
 
+    save_file: "./data/blobs_gt_ref.npz"
+
+    load_file: "./data/blobs_gt_ref.npz"
+
   # Sample Generator Paramters
   params:
     n_background: 1.0
     delta_n: 0.05         # Scattering strength
     beta_n: 0.005          # Absorption
     n_blobs: 300
-    blob_r_range_um: [0.05, 0.2]
+    blob_r_range_um: [0.2, 0.5]
 
 # Benchmarking List
 # List as many solvers as desired for comparison

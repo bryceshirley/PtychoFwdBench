@@ -42,3 +42,7 @@ Thumbs.db
 
 # Pytest cache
 .pytest_cache/
+
+
+# Data files
+*.npz

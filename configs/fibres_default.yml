@@ -23,6 +23,8 @@ sample:
     solver_params:
       pade_order: 8       # Very high accuracy for reference
 
+    save_file: "./data/fibres_gt_ref.npz"
+
   params:
     n_background: 1.33
     delta_n: 0.03

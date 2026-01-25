@@ -18,12 +18,18 @@ sample:
 
   # Ground Truth Settings (Reference Solution)
   ground_truth:
-    n_prop_fine: 2000      # High-res propagation steps for reference
-    solver_type: "PADE"    # Which algorithm to trust as "truth"
-    solver_params:
-      pade_order: 8       # Very high accuracy for reference
+    # n_prop_fine: 2000      # High-res propagation steps for reference
+    # solver_type: "PADE"    # Which algorithm to trust as "truth"
+    # solver_params:
+    #   pade_order: 8       # Very high accuracy for reference
 
-  # Sample Generator Paramters
+    # To SAVE the computed ground truth for later reuse:
+    # save_file: "./data/waveguide_gt_ref.npz"
+
+    # To LOAD a previously computed ground truth (skips generation):
+    load_file: "./data/waveguide_gt_ref.npz"
+
+  # Sample Generator Parameters
   params:
     delta_n: 0.01         # Scattering strength
     beta_n: 0.001        # Absorption
@@ -32,7 +38,7 @@ sample:
 
 # Benchmarking List
 solvers:
-  - name: "Pade (Order 8)" # Arbitary Name
+  - name: "Pade (Order 8)"
     type: "PADE"
     solver_params:
       pade_order: 8
@@ -43,5 +49,5 @@ solvers:
       symmetric: false
 
 benchmark:
-  step_counts: [8, 16,32,64,128,256,512]
+  step_counts: [8, 16, 32, 64, 128, 256, 512]
   save_beam_idx: 0

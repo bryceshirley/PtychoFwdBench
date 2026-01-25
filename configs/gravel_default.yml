@@ -23,6 +23,8 @@ sample:
     solver_params:
       pade_order: 8       # Very high accuracy for reference
 
+    save_file: "./data/gravel_gt_ref.npz"
+
   # Sample Generator Paramters
   params:
     n_background: 1.0
