@@ -1,72 +1,120 @@
 import numpy as np
 from scipy.fft import dst, idst
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from abc import ABC, abstractmethod
 
-from pyram.PyRAM import PyRAM
+from .pyram.PyRAM import PyRAM
 from pyram_ptycho.generators import get_probe_field
 
-# =============================================================================
-# 1. Abstract Base Class (The Interface)
-# =============================================================================
+# --------------------------------------------
+# Solver Factory
+# --------------------------------------------
+
+
+def create_solver(
+    solver_type: str,
+    solver_params: Dict[str, Any],
+    n_map: np.ndarray,
+    sim_params: Dict[str, Any],
+    dz: float,
+    save_beam: bool = False,
+):
+    """
+    Factory function to instantiate solvers based on type string.
+    """
+    s_type = solver_type.upper()
+
+    # Common Physics Args
+    common_args = {
+        "n_map": n_map,
+        "dx": sim_params["dx"],
+        "wavelength": sim_params["wavelength"],
+        "probe_dia": sim_params["probe_dia"],
+        "probe_focus": sim_params["probe_focus"],
+        "dz": dz,
+    }
+
+    if s_type == "PADE":
+        # Handle PyRAM specific args
+        store_res = (1, 1) if save_beam else None
+        return PtychoPadeSolver(
+            **common_args,
+            pade_order=solver_params.get("pade_order", 8),
+            beam_store_resolution=store_res,
+        )
+    if s_type == "SPECTRAL_PADE":
+        return SpectralPadeSolver(
+            **common_args,
+            pade_order=solver_params.get("pade_order", 8),
+            store_beam=save_beam,
+        )
+
+    elif s_type in ["MULTISLICE", "MS"]:
+        return MultisliceSolver(
+            **common_args,
+            symmetric=solver_params.get("symmetric", False),
+            transform_type=solver_params.get("transform_type", "DST"),
+            store_beam=save_beam,
+        )
+
+    else:
+        raise ValueError(f"Unknown solver type: {solver_type}")
+
+
+# --------------------------------------------
+# Solver Base Classes
+# --------------------------------------------
 
 
 class OpticalWaveSolver(ABC):
     """
-    Abstract Base Class defining the interface for X-ray propagation solvers.
-
-    This ensures that different solver implementations (e.g., Multislice, Pade)
-    expose a consistent API for benchmarking and integration.
+    Abstract Base Class for optical wave propagation solvers.
     """
 
     @abstractmethod
-    def run(self) -> "OpticalWaveSolver":
-        """
-        Executes the simulation pipeline.
-
-        Returns:
-            OpticalWaveSolver: Returns self to allow method chaining.
-        """
+    def run(self, psi_init: Optional[np.ndarray] = None) -> "OpticalWaveSolver":
         pass
 
     @abstractmethod
     def get_exit_wave(self, n_crop: Optional[int] = None) -> np.ndarray:
-        """
-        Retrieves the 1D complex field at the end of the sample (Exit Surface Wave).
-
-        Args:
-            n_crop (int, optional): Number of pixels to crop to (centered).
-                                    Useful for removing padding.
-
-        Returns:
-            np.ndarray: 1D complex array of the wavefront.
-        """
         pass
 
     @abstractmethod
     def get_beam_field(self) -> Optional[np.ndarray]:
-        """
-        Retrieves the full 2D beam propagation history.
-
-        Returns:
-            np.ndarray: 2D complex array (Transverse, Propagation) if storage was enabled.
-            None: If beam storage was disabled.
-        """
         pass
 
 
-# =============================================================================
-# 2. Pade Solver (PyRAM Wrapper)
-# =============================================================================
+# --------------------------------------------
+# Spectral Pade Solver (not implemented yet)
+# --------------------------------------------
+
+
+class SpectralPadeSolver(OpticalWaveSolver):
+    """
+    Spectral Pade Solver (Placeholder).
+    """
+
+    def __init__(self, **kwargs):
+        pass
+
+    def run(self, psi_init: Optional[np.ndarray] = None) -> "SpectralPadeSolver":
+        raise NotImplementedError("SpectralPadeSolver is not implemented yet.")
+
+    def get_exit_wave(self, n_crop: Optional[int] = None) -> np.ndarray:
+        raise NotImplementedError("SpectralPadeSolver is not implemented yet.")
+
+    def get_beam_field(self) -> Optional[np.ndarray]:
+        raise NotImplementedError("SpectralPadeSolver is not implemented yet.")
+
+
+# --------------------------------------------
+# PyRAM Pade Solver Wrapper
+# --------------------------------------------
 
 
 class PtychoPadeSolver(PyRAM, OpticalWaveSolver):
     """
-    A concrete implementation of an OpticalWaveSolver using the PyRAM library.
-
-    This class acts as an adapter, mapping X-ray optical parameters (refractive index,
-    wavelength) to the acoustic parabolic equation parameters (sound speed, frequency)
-    expected by the PyRAM backend.
+    PyRAM Pade solver wrapper.
     """
 
     def __init__(
@@ -76,172 +124,142 @@ class PtychoPadeSolver(PyRAM, OpticalWaveSolver):
         wavelength: float,
         probe_dia: float,
         probe_focus: float,
-        c0: float = 1500.0,
         pade_order: int = 8,
         beam_store_resolution: Optional[Tuple[int, int]] = None,
+        dz: Optional[float] = None,
     ):
-        """
-        Initializes the Pade Solver.
-
-        Args:
-            n_map (np.ndarray): 2D Complex Refractive Index Map (nz_transverse, nr_propagation).
-            dx (float): Pixel size in meters (assumed isotropic).
-            wavelength (float): Radiation wavelength in meters.
-            probe_dia (float): Diameter of the probe aperture in meters.
-            probe_focus (float): Focal distance of the probe in meters.
-            c0 (float): Reference velocity constant for the acoustic analogy. Defaults to 1500.0.
-            pade_order (int): Order of the Pade approximation (higher is more accurate but slower).
-            beam_store_resolution (tuple, optional): (ndr, ndz) decimation factors for storing the beam.
-                                                     If None, defaults to (1, 1).
-        """
-        # --- 1. Store Optical Physics Parameters ---
         self.probe_dia = probe_dia
         self.probe_focus = probe_focus
         self.wavelength = wavelength
+        self.dx = dx
+        self.pade_order = pade_order
 
-        # --- 2. Geometry Setup ---
-        # Convention: Z is propagation direction, X is transverse direction.
+        # Arbitrary reference sound speed (m/s)
+        c0 = 1.0
+
+        # Grid Dimensions
         nz, nr_steps = n_map.shape
-        transverse_width = nz * dx
-        propagation_dist = nr_steps * dx
+        self.nz = nz
+        self._dz = dx  # Transverse step for PyRAM internal use
 
-        # --- 3. Parameter Translation (Optics to Acoustics) ---
-        # PyRAM solves the acoustic parabolic equation. We map optical parameters:
-        # Frequency = Reference Velocity / Wavelength
+        # Logic: If we downsample Z, dz increases.
+        self.prop_step = dz if dz is not None else dx
+
+        # Grid Extents
+        # Physical width of N points spaced by dx is (N-1)*dx
+        transverse_width = (nz - 1) * dx
+        propagation_dist = nr_steps * self.prop_step
+
+        # Physics & Grids
         freq = c0 / wavelength
-
-        # Generate Coordinate Grids
-        # z_ss corresponds to the transverse depth in acoustics
         z_ss = np.linspace(0, transverse_width, nz)
-        # rp_ss corresponds to the propagation range in acoustics
         rp_ss = np.linspace(0, propagation_dist, nr_steps)
+        cw = c0 / n_map  # Sound speed map
 
-        # Map Refractive Index (n) to Sound Speed (cw)
-        # Relationship: v = c0 / n
-        cw = c0 / n_map
-
-        # --- 4. Boundary Layers (PyRAM Requirements) ---
-        # Define bottom boundary properties to satisfy PyRAM structure.
-        # These are effectively dummy values for transmission mode.
-        z_sb = np.array([0.0, 2.0 * dx])
-        rp_sb = np.array([0.0])
-        cb = np.array([[c0], [c0]])  # Bottom velocity
-        rhob = np.array([[1.0], [1.0]])  # Bottom density
-        attn_sb = np.array([[0.0], [0.0]])  # Bottom attenuation
-
-        # Define Computational Domain Bounds: [[r_min, z_min], [r_max, z_max]]
-        rbzb = np.array([[0, transverse_width], [propagation_dist, transverse_width]])
-
-        # --- 5. Output Storage Settings ---
         if beam_store_resolution:
             ndr, ndz = beam_store_resolution
         else:
-            # Default to full resolution (1, 1)
             ndr, ndz = 1, 1
 
-        # --- 6. Initialize Parent PyRAM ---
         super().__init__(
-            freq=freq,  # Frequency (Hz)
-            zs=transverse_width / 2.0,  # Source depth (Transverse center)
-            zr=transverse_width / 2.0,  # Receiver depth (Transverse center)
-            z_ss=z_ss,  # Transverse grid points array
-            rp_ss=rp_ss,  # Propagation grid points array
-            cw=cw,  # Sound speed map (derived from Refractive Index)
-            attn=attn_sb,  # Attenuation map (optional)
-            z_sb=z_sb,  # Bottom boundary depth grid
-            rp_sb=rp_sb,  # Bottom boundary range grid
-            cb=cb,  # Bottom boundary sound speed
-            rhob=rhob,  # Bottom boundary density
-            rbzb=rbzb,  # Domain boundaries
-            rmax=propagation_dist,  # Total propagation distance
-            dr=propagation_dist / nr_steps,  # Step size in Propagation (Optics Z)
-            dz=dx,  # Step size in Transverse (Optics X)
-            c0=c0,  # Reference sound speed
-            np=pade_order,  # Pade coefficients order (Accuracy)
-            lyrw=0,  # Absorbing layer width (0 = Dirichlet Wall)
-            ndr=ndr,  # Output decimation factor (Propagation)
-            ndz=ndz,  # Output decimation factor (Transverse)
+            # --- PHYSICAL CONSTANTS ---
+            freq=freq,  # Frequency (Hz). Derived as c0 / wavelength.
+            c0=c0,  # Reference sound speed (m/s). Serves as the base velocity for the simulation.
+            # --- GEOMETRY & SOURCE ---
+            zs=transverse_width
+            / 2.0,  # Source Depth (m). In optics, this places the probe at the transverse center of the grid.
+            zr=transverse_width
+            / 2.0,  # Receiver Depth (m). Center of the detector plane.
+            # --- MEDIA PROPERTIES (Optics -> Acoustics Mapping) ---
+            z_ss=z_ss,  # Transverse grid coordinates (Vertical axis in acoustics, X-axis in optics).
+            rp_ss=rp_ss,  # Propagation grid coordinates (Range axis in acoustics, Z-axis in optics).
+            cw=cw,  # Sound Speed Map (m/s). Calculated as c0 / n_map (inverse refractive index).
+            # --- BOUNDARY CONDITIONS (Dummy values for Optics) ---
+            # PyRAM requires seabed definitions.
+            z_sb=np.array([0.0, 2.0 * dx]),  # Seabed depth profile (Dummy).
+            rp_sb=np.array([0.0]),  # Seabed range profile (Dummy).
+            cb=np.array([[c0], [c0]]),  # Seabed sound speed (Dummy, set to c0).
+            rhob=np.array([[1.0], [1.0]]),  # Seabed density (Dummy, set to 1.0).
+            attn=np.array(
+                [[0.0], [0.0]]
+            ),  # Attenuation (Dummy, set to 0.0 for transparent boundary).
+            rbzb=np.array(  # Domain bounds. Defines the computation box [0, width] x [0, length].
+                [[0, transverse_width], [propagation_dist, transverse_width]]
+            ),
+            # --- SOLVER GRID SETTINGS ---
+            rmax=propagation_dist,  # Maximum calculation range (Total sample thickness).
+            dr=self.prop_step,  # Range step size (Longitudinal step \Delta z).
+            dz=dx,  # Depth step size (Transverse pixel size \Delta x).
+            # --- NUMERICAL PARAMETERS ---
+            np=pade_order,  # Number of Pade terms. Higher = more accurate wide-angle propagation but slower.
+            lyrw=0,  # Absorbing Layer Width. 0 = Hard-wall (Dirichlet) boundary conditions at edges.
+            ndr=ndr,  # Output decimation factor for Range (save every Nth step).
+            ndz=ndz,  # Output decimation factor for Depth (save every Nth pixel).
         )
+
+        self._external_psi_init = None
 
     def selfs(self):
-        """
-        PyRAM Hook: Generates the initial condition (Source Field) at r=0.
+        """PyRAM Hook: Sets initial condition."""
+        if self._external_psi_init is not None:
+            self.u[:] = self._external_psi_init
+        else:
+            # Generate consistent internal probe
+            x_grid = np.arange(self.nz + 2) * self.dx
+            phys_center = (self.nz * self.dx) / 2.0
+            self.u[:] = get_probe_field(
+                x_grid, phys_center, self.probe_dia, self.probe_focus, self.wavelength
+            )
 
-        This method is called automatically by the parent PyRAM.run() method.
-        It generates the optical probe field and applies Dirichlet boundary conditions.
-        """
-        # PyRAM internal grid usually includes boundary points.
-        # self.nz and self._dz are properties of the parent PyRAM class.
-        x_grid = np.arange(self.nz + 2) * self._dz
-
-        # Generate the optical probe
-        field = get_probe_field(
-            x_grid,
-            self._zs,  # Source center defined in init
-            self.probe_dia,
-            self.probe_focus,
-            self.wavelength,
-        )
-
-        self.u[:] = field
-
-        # Enforce Hard-wall boundaries (Dirichlet BCs) at the edges
         self.u[0] = 0.0
         self.u[-1] = 0.0
 
-    def run(self) -> "PtychoPadeSolver":
-        """
-        Runs the PyRAM simulation.
-        """
-        super().run()
+    def run(self, psi_init: Optional[np.ndarray] = None) -> "PtychoPadeSolver":
+        if psi_init is not None:
+            if len(psi_init) != self.nz:
+                raise ValueError(
+                    f"psi_init size {len(psi_init)} does not match solver grid {self.nz}"
+                )
+
+            self._raw_psi_init = psi_init.copy()
+            # Pad with 1 pixel of zeros on each side for PyRAM Dirichlet BCs
+            self._external_psi_init = np.pad(psi_init, (1, 1), mode="constant")
+
+        self.res = super().run()
+
+        # Inject initial condition at column 0
+        if "CP Grid" in self.res:
+            # Explicit slicing ensures safety if grid sizes drift slightly
+            out_shape = self.res["CP Grid"].shape[0]
+            if self._raw_psi_init is not None:
+                # Truncate or pad input to match output exactly
+                inj = self._raw_psi_init[:out_shape]
+                self.res["CP Grid"][: len(inj), 0] = inj
+
         return self
 
     def get_exit_wave(self, n_crop: Optional[int] = None) -> np.ndarray:
-        """
-        Retrieves the 1D complex field at the end of the simulation.
-
-        Removes the boundary points used by the Finite Difference grid.
-        """
-        # Slice [1:-1] to remove boundary points (u[0] and u[-1])
         wave = self.u[1:-1].copy()
-
         if n_crop is not None:
-            if len(wave) >= n_crop:
-                return wave[:n_crop]
-            else:
-                raise ValueError(
-                    f"Output grid size ({len(wave)}) is smaller than requested crop ({n_crop})."
-                )
+            start = (len(wave) - n_crop) // 2
+            return wave[start : start + n_crop]
         return wave
 
     def get_beam_field(self) -> Optional[np.ndarray]:
-        """
-        Extracts the stored 2D beam field if available.
-
-        Returns:
-            np.ndarray: Shape (Transverse, Propagation).
-        """
-        # PyRAM stores 'out_cp' or 'CP Grid' in shape (Depth, Range).
-        # We return it directly as (Transverse, Propagation).
-
-        if hasattr(self, "out_cp") and self.out_cp is not None:
-            return self.out_cp
-        if "CP Grid" in self.res:
-            return self.res["CP Grid"]
-        return None
+        res = getattr(self, "res", {})
+        if "CP Grid" in res:
+            return res["CP Grid"]
+        return getattr(self, "cpg", None)
 
 
-# =============================================================================
-# 3. Multislice Solver (Native Implementation)
-# =============================================================================
+# --------------------------------------------
+# Multislice Solver
+# --------------------------------------------
 
 
 class MultisliceSolver(OpticalWaveSolver):
     """
-    Standard Split-Step Fourier Method (Multislice) solver.
-
-    Propagates the wavefield by alternating between the spectral domain (Diffraction)
-    and the spatial domain (Refraction).
+    Standard Split-Step Fourier Solver (Multislice).
     """
 
     def __init__(
@@ -254,166 +272,77 @@ class MultisliceSolver(OpticalWaveSolver):
         symmetric: bool = True,
         transform_type: str = "DST",
         store_beam: bool = False,
+        dz: Optional[float] = None,
     ):
-        """
-        Initializes the Multislice Solver.
-
-        Args:
-            n_map (np.ndarray): 2D Complex Refractive Index Map (nz, nr_steps).
-            dx (float): Pixel size in meters.
-            wavelength (float): Radiation wavelength in meters.
-            probe_dia (float): Probe diameter in meters.
-            probe_focus (float): Probe focal distance in meters.
-            symmetric (bool): If True, uses the Symmetrized Split-Step (Prop/2 -> Phase -> Prop/2).
-            transform_type (str): "FFT" for Periodic BCs, "DST" for Dirichlet (Hard Wall) BCs.
-            store_beam (bool): If True, records the wavefront at every step.
-        """
         self.n_map = n_map
         self.nx, self.nz_steps = n_map.shape
         self.dx = dx
+        self.dz = dz if dz is not None else dx
         self.k0 = 2 * np.pi / wavelength
         self.symmetric = symmetric
         self.transform_type = transform_type
         self.store_beam = store_beam
-
-        # Probe Parameters
         self.probe_dia = probe_dia
         self.probe_focus = probe_focus
         self.wavelength = wavelength
         self.total_width = self.nx * dx
-
-        # Internal Cache & Results Storage
         self._kernel_cache = {}
         self.psi_final = None
         self.beam_history = None
 
     def _get_propagation_kernel(self, dz: float) -> np.ndarray:
-        """
-        Computes the free-space propagation kernel H = exp(i * kz * dz).
-
-        Results are cached to improve performance during iteration.
-
-        Args:
-            dz (float): Propagation step size.
-
-        Returns:
-            np.ndarray: Complex propagator in Fourier/Spectral domain.
-        """
         key = (self.transform_type, dz)
         if key in self._kernel_cache:
             return self._kernel_cache[key]
 
-        L = self.nx * self.dx
-
-        # 1. Generate Wavenumbers (kx)
         if self.transform_type == "FFT":
             fx = np.fft.fftfreq(self.nx, d=self.dx)
             kx = 2 * np.pi * fx
         elif self.transform_type == "DST":
-            # Type 2 DST modes: kx = (pi * (n + 1)) / L
             modes = np.arange(self.nx) + 1
-            kx = np.pi * modes / L
-        else:
-            raise ValueError(f"Unknown transform type: {self.transform_type}")
+            kx = np.pi * modes / (self.nx * self.dx)
 
-        # 2. Exact Helmholtz propagator setup
-        # kz = sqrt(k0^2 - kx^2)
         inside = self.k0**2 - kx**2
-
-        # Clip negative values to 0 to handle evanescent waves (non-propagating)
         sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
-
-        # Carrier removal: exp(i * (kz - k0) * dz)
-        # This transforms the operator to the frame of reference moving at k0
         Lambda = 1j * (sqrt_term - self.k0)
         H = np.exp(Lambda * dz).astype(np.complex128)
-
         self._kernel_cache[key] = H
         return H
 
     def _apply_diffraction(self, psi: np.ndarray, dz: float) -> np.ndarray:
-        """
-        Applies the diffraction operator in the spectral domain.
-
-        Args:
-            psi (np.ndarray): Current wavefront in spatial domain.
-            dz (float): Distance to propagate.
-
-        Returns:
-            np.ndarray: Propagated wavefront in spatial domain.
-        """
         H = self._get_propagation_kernel(dz)
-
         if self.transform_type == "FFT":
-            # Standard Periodic Propagation
             return np.fft.ifft(np.fft.fft(psi) * H)
-
         elif self.transform_type == "DST":
-            # Unitary DST-II (Discrete Sine Transform)
-            # Decompose into Real and Imaginary parts for the transform
             psi_real = dst(np.real(psi), type=2, norm="ortho")
             psi_imag = dst(np.imag(psi), type=2, norm="ortho")
-
-            # Apply Propagator
             psi_spectral = (psi_real + 1j * psi_imag) * H
-
-            # Inverse Transform
             out_real = idst(np.real(psi_spectral), type=2, norm="ortho")
             out_imag = idst(np.imag(psi_spectral), type=2, norm="ortho")
-
             return out_real + 1j * out_imag
-
         return psi
 
-    def run(self, sample_thick: Optional[float] = None) -> "MultisliceSolver":
-        """
-        Generates the probe and propagates it through the sample map.
-
-        Args:
-            sample_thick (float, optional): Total physical thickness of the sample.
-                                            If None, derived from n_map steps * dx.
-        """
-        # 1. Generate Probe (Initial Condition)
-        # Center the probe in the simulation window
-        center_x = self.total_width / 2.0
-
-        # Generate coordinates aligned with pixel centers
-        x_coords = (np.arange(self.nx) + 0.5) * self.dx
-
-        psi = get_probe_field(
-            x_coords, center_x, self.probe_dia, self.probe_focus, self.wavelength
-        )
-        psi = psi.astype(complex)
-
-        # 2. Determine Step Size (dz)
-        if sample_thick is None:
-            # Assume isotropic pixels if not specified
-            dz = self.dx
+    def run(self, psi_init: Optional[np.ndarray] = None) -> "MultisliceSolver":
+        if psi_init is not None:
+            psi = psi_init.astype(complex)
         else:
-            # Distribute thickness over the available slices
-            dz = sample_thick / self.nz_steps
+            center_x = self.total_width / 2.0
+            x_coords = np.arange(self.nx) * self.dx
+            psi = get_probe_field(
+                x_coords, center_x, self.probe_dia, self.probe_focus, self.wavelength
+            )
+            psi = psi.astype(complex)
 
-        # 3. Initialize Beam Storage
         if self.store_beam:
             self.beam_history = np.zeros((self.nx, self.nz_steps), dtype=complex)
 
-        # 4. Main Propagation Loop
         for i in range(self.nz_steps):
-            # Split the diffraction step if symmetric (Lie-Trotter / Strang Splitting)
-            step_dist = (dz / 2.0) if self.symmetric else dz
-
-            # Step A: Diffraction (1/2)
+            step_dist = (self.dz / 2.0) if self.symmetric else self.dz
             psi = self._apply_diffraction(psi, step_dist)
-
-            # Step B: Refraction (Phase mask)
-            # phase = k0 * delta_n * dz
             n_slice = self.n_map[:, i]
-            psi *= np.exp(1j * self.k0 * (n_slice - 1.0) * dz)
-
-            # Step C: Diffraction (2/2)
+            psi *= np.exp(1j * self.k0 * (n_slice - 1.0) * self.dz)
             if self.symmetric:
                 psi = self._apply_diffraction(psi, step_dist)
-
             if self.store_beam:
                 self.beam_history[:, i] = psi
 
@@ -421,27 +350,10 @@ class MultisliceSolver(OpticalWaveSolver):
         return self
 
     def get_exit_wave(self, n_crop: Optional[int] = None) -> np.ndarray:
-        """
-        Retrieves the final wavefront.
-        """
-        if self.psi_final is None:
-            raise RuntimeError("Run method must be called before getting exit wave.")
-
-        wave = self.psi_final.copy()
-
-        # Multislice generally maintains the grid size, so simple bounds check
-        if n_crop is not None:
-            if len(wave) < n_crop:
-                raise ValueError("Grid is smaller than crop size.")
-            # Center crop logic could be added here if grids differ,
-            # but usually they match in this implementation.
-
-        return wave
+        if n_crop is not None and self.psi_final is not None:
+            start = (len(self.psi_final) - n_crop) // 2
+            return self.psi_final[start : start + n_crop]
+        return self.psi_final
 
     def get_beam_field(self) -> Optional[np.ndarray]:
-        """
-        Retrieves the beam history.
-        """
-        if self.store_beam and self.beam_history is not None:
-            return self.beam_history
-        return None
+        return self.beam_history

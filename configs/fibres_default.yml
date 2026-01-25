@@ -4,7 +4,6 @@ experiment:
 
 physics:
   wavelength_um: 0.635
-  c0: 1500.0
   probe_dia_um: 20.0
   probe_focus_um: 0.0
 
@@ -16,7 +15,14 @@ grid:
 sample:
   type: "FIBERS"
   thickness_um: 200.0
-  n_prop_fine: 2000
+
+  # Ground Truth Settings (Reference Solution)
+  ground_truth:
+    n_prop_fine: 2000      # High-res propagation steps for reference
+    solver_type: "PADE"    # Which algorithm to trust as "truth"
+    solver_params:
+      pade_order: 8       # Very high accuracy for reference
+
   params:
     n_background: 1.33
     delta_n: 0.03
@@ -25,8 +31,17 @@ sample:
     density: 0.6
     waviness_um: 1.2
 
-solver:
-  pade_order: 8
+solvers:
+  - name: "Pade (Order 8)" # Arbitary Name
+    type: "PADE"
+    solver_params:
+      pade_order: 8
+
+  - name: "Multislice (DST)"
+    type: "MULTISLICE"
+    solver_params:
+      transform_type: "DST"
+      symmetric: false
 
 benchmark:
   step_counts: [64, 128, 256]

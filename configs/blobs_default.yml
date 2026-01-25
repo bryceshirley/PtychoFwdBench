@@ -4,9 +4,8 @@ experiment:
 
 physics:
   wavelength_um: 0.635
-  c0: 1500.0
   probe_dia_um: 10.0
-  probe_focus_um: -10.0  # Divergent
+  probe_focus_um: -10.0
 
 grid:
   n_physical: 1024
@@ -16,15 +15,35 @@ grid:
 sample:
   type: "BLOBS"
   thickness_um: 40.0
-  n_prop_fine: 1024
+
+  # Ground Truth Settings (Reference Solution)
+  ground_truth:
+    n_prop_fine: 2000      # High-res propagation steps for reference
+    solver_type: "PADE"    # Which algorithm to trust as "truth"
+    solver_params:
+      pade_order: 8       # Very high accuracy for reference
+
+  # Sample Generator Paramters
   params:
     n_background: 1.0
-    delta_n: 0.05
-    beta_n: 0.005
-    n_blobs: 100
+    delta_n: 0.05         # Scattering strength
+    beta_n: 0.005          # Absorption
+    n_blobs: 300
+    blob_r_range_um: [0.05, 0.2]
 
-solver:
-  pade_order: 8
+# Benchmarking List
+# List as many solvers as desired for comparison
+solvers:
+  - name: "Pade (Order 8)" # Arbitary Name
+    type: "PADE"
+    solver_params:
+      pade_order: 8
+
+  - name: "Multislice (DST)"
+    type: "MULTISLICE"
+    solver_params:
+      transform_type: "DST"
+      symmetric: false
 
 benchmark:
   step_counts: [8, 16, 32, 64]

@@ -4,7 +4,6 @@ experiment:
 
 physics:
   wavelength_um: 0.635
-  c0: 1500.0
   probe_dia_um: 8.0
   probe_focus_um: 0.0
 
@@ -16,16 +15,33 @@ grid:
 sample:
   type: "WAVEGUIDE"
   thickness_um: 200.0
-  n_prop_fine: 4000
-  params:
-    n_background: 1.0
-    delta_n: 0.1
-    beta_n: 0.001
-    width_um: 8.0
 
-solver:
-  pade_order: 8
+  # Ground Truth Settings (Reference Solution)
+  ground_truth:
+    n_prop_fine: 2000      # High-res propagation steps for reference
+    solver_type: "PADE"    # Which algorithm to trust as "truth"
+    solver_params:
+      pade_order: 8       # Very high accuracy for reference
+
+  # Sample Generator Paramters
+  params:
+    delta_n: 0.01         # Scattering strength
+    beta_n: 0.001        # Absorption
+    width_um: 8.0
+    n_background: 1.0
+
+# Benchmarking List
+solvers:
+  - name: "Pade (Order 8)" # Arbitary Name
+    type: "PADE"
+    solver_params:
+      pade_order: 8
+  - name: "Multislice (DST)"
+    type: "MULTISLICE"
+    solver_params:
+      transform_type: "DST"
+      symmetric: false
 
 benchmark:
-  step_counts: [32, 64, 128]
+  step_counts: [8, 16,32,64,128,256,512]
   save_beam_idx: 0

@@ -7,6 +7,9 @@ results/
 *.pff
 pyram_ptycho/pyram/Tests/tl.line
 
+# Ruff cache directory
+.ruff_cache/
+
 # --- Python / Build Artifacts ---
 # Ignore byte-compiled files
 __pycache__/

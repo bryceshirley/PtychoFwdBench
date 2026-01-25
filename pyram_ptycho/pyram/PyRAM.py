@@ -27,9 +27,9 @@ and depth steps (though these can be overridden using keyword arguments).
 
 import numpy
 from time import process_time
-from pyram.matrc import matrc
-from pyram.solve import solve
-from pyram.outpt import outpt
+from .matrc import matrc
+from .solve import solve
+from .outpt import outpt
 
 
 class PyRAM:

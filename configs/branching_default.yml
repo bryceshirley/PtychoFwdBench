@@ -4,8 +4,7 @@ experiment:
 
 physics:
   wavelength_um: 0.635
-  c0: 1500.0
-  probe_dia_um: 8.0
+  probe_dia_um: 10.0
   probe_focus_um: 0.0
 
 grid:
@@ -16,7 +15,14 @@ grid:
 sample:
   type: "BRANCHING"
   thickness_um: 200.0
-  n_prop_fine: 4000
+
+  # Ground Truth Settings (Reference Solution)
+  ground_truth:
+    n_prop_fine: 2000      # High-res propagation steps for reference
+    solver_type: "PADE"    # Which algorithm to trust as "truth"
+    solver_params:
+      pade_order: 8       # Very high accuracy for reference
+
   params:
     n_background: 1.00
     delta_n: 0.04
@@ -25,9 +31,20 @@ sample:
     split_angle: 0.20
     repulsion: 0.005
 
-solver:
-  pade_order: 8
+# Benchmarking List
+# List as many solvers as desired for comparison
+solvers:
+  - name: "Pade (Order 8)" # Arbitary Name
+    type: "PADE"
+    solver_params:
+      pade_order: 8
+
+  - name: "Multislice (DST)"
+    type: "MULTISLICE"
+    solver_params:
+      transform_type: "DST"
+      symmetric: false
 
 benchmark:
-  step_counts: [64, 128, 256]
+  step_counts: [16, 32,64, 128, 256]
   save_beam_idx: 0

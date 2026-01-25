@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --dev
+
+      - name: Lint with Ruff
+        run: |
+          # Check for errors
+          uv run ruff check .
+          # Check formatting
+          uv run ruff format --check .
+
+      - name: Run Project Tests (Pytest)
+        run: |
+          uv run pytest tests/ -v
+
+      - name: Run PyRAM Core Tests (Unittest)
+        run: |
+          # Run discovery on the internal PyRAM tests directory
+          uv run python -m unittest discover -s pyram_ptycho/pyram/Tests -p "Test*.py" -v
