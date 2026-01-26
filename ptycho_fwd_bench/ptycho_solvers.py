@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, Tuple
 from abc import ABC, abstractmethod
 
 from .pyram.PyRAM import PyRAM
-from sssp.pade import pade_coefficients
+from .sssp.pade import pade_coefficients
 from ptycho_fwd_bench.generators import get_probe_field
 
 # --------------------------------------------
@@ -47,6 +47,7 @@ def create_solver(
         return SpectralPadeSolver(
             **common_args,
             pade_order=solver_params.get("pade_order", 8),
+            max_iter=solver_params.get("max_iter", 4),
             store_beam=save_beam,
         )
 
@@ -86,14 +87,13 @@ class OpticalWaveSolver(ABC):
 
 
 # --------------------------------------------
-# Spectral Pade Solver (not implemented yet)
+# Spectral Pade Solver
 # --------------------------------------------
 
 
-class SpectralPadeSolver(OpticalWaveSolver):
+class SpectralPadeSolver:
     """
-    Spectral Pade Solver implementing High-Order Spectral Split-Step Pade
-    for Ptychography/Wave Propagation.
+    Spectral Pade Solver implementing High-Order Spectral Split-Step Pade.
     """
 
     def __init__(
@@ -102,126 +102,89 @@ class SpectralPadeSolver(OpticalWaveSolver):
         dz: float,
         dx: float,
         wavelength: float,
-        probe_dia: float,
-        probe_focus: float,
+        probe_dia: float = 0,
+        probe_focus: float = 0,
         pade_order: int = 4,
         transform_type: str = "DST",
-        max_iter: int = 5,
+        max_iter: int = 4,
         store_beam: bool = False,
     ):
-        """
-        Args:
-            n_map: Refractive index map (nz, nx)
-            dz: Propagation step size (dz)
-            dx: Transverse step size (dx)
-            k0: Reference wavenumber
-            pade_order: Number of Pade terms
-            max_iter: Max iterations for the Richardson solver
-        """
         self.nx, self.nz_steps = n_map.shape
         self.n_map = n_map
         self.dz = dz
         self.dx = dx
         self.wavelength = wavelength
         self.k0 = 2 * np.pi / wavelength
+        self.probe_dia = probe_dia
+        self.probe_focus = probe_focus
         self.k0sq = self.k0**2
         self.pade_order = pade_order
         self.max_iter = max_iter
-        self.probe_dia = probe_dia
-        self.probe_focus = probe_focus
         self.transform_type = transform_type
         self.store_beam = store_beam
         self.total_width = self.nx * self.dx
-        self.total_range = self.nz_steps * self.dz
 
         # Precompute Pade coefficients for the step size dz
         hk0 = self.dz * self.k0
-        self.b_coeffs, self.d_coeffs = pade_coefficients(hk0, self.pade_order)
+        self.b_coeffs_raw, self.d_coeffs = pade_coefficients(hk0, self.pade_order)
 
-        # Normalize b coefficients by k0**2
-        # to match operator units: X = L + N
-        self.b_coeffs = self.b_coeffs / (self.k0**2)
-
-        # --- 1. GENERATE WAVENUMBERS (kx) ---
+        # Generate Spectral Wavenumbers
         if transform_type == "FFT":
             fx = np.fft.fftfreq(self.nx, d=self.dx)
             kx = 2 * np.pi * fx
+            self.Lambda = -(kx**2)
+        elif transform_type == "DST":
+            modes = np.arange(1, self.nx + 1)
+            kx = np.pi * modes / self.total_width
+            self.Lambda = -(kx**2)
         elif transform_type == "DCT":
             modes = np.arange(self.nx)
             kx = (np.pi * modes) / self.total_width
-        elif transform_type == "DST":
-            modes = np.arange(self.nx) + 1
-            kx = np.pi * modes / self.total_width
+            self.Lambda = -(kx**2)
         else:
             raise ValueError(f"Unknown transform type: {transform_type}")
-
-        # --- 2. PRECOMPUTE LAMBDA OPERATOR ---
-        inside = self.k0sq - kx**2
-        sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
-        # Subtract self.k0. Removes fast oscillations (envelope).
-        self.Lambda = 1j * (sqrt_term - self.k0)
 
         # Initialize storage
         self.psi_final = None
         self.beam_history = None
 
-    def run(self, psi_init: Optional[np.ndarray] = None) -> "SpectralPadeSolver":
+    def run(self, psi_init: np.ndarray) -> "SpectralPadeSolver":
         """
         Propagate the field through the volume.
-
-        Args:
-            H: Total transverse physical width (for DST normalization)
         """
-        # Initialize field
-        if psi_init is not None:
-            psi = psi_init.astype(complex)
-        else:
-            center_x = self.total_width / 2.0
-            x_coords = np.arange(self.nx) * self.dx
-            psi = get_probe_field(
-                x_coords, center_x, self.probe_dia, self.probe_focus, self.wavelength
-            )
-            psi = psi.astype(complex)
+        psi = psi_init.astype(complex)
 
-        # Store initial field
         if self.store_beam:
             self.beam_history = np.zeros((self.nx, self.nz_steps), dtype=complex)
             self.beam_history[:, 0] = psi
 
-        # Phase shift term
+        # Phase shift term e^{ik Delta z}
         phase_shift = np.exp(1j * self.dz * self.k0)
 
         # Propagation loop
         for i in range(self.nz_steps - 1):
-            # --- Pade Propagation Step ---
-            # Summation starts with d0 * psi``
+            # 1. Initialize Summation: d0 * psi
             psi_next = self.d_coeffs[0] * psi
 
-            # Define Refractive Operator
-            N_op = (self.n_map[i, :] ** 2) - 1
+            # 2. Define Refractive Term N = n^2 - 1
+            N_vals = (self.n_map[:, i] ** 2) - 1.0
 
-            # Add partial fraction terms sum(d_j * w_j)
+            # 3. Add partial fraction terms sum(d_j * w_j)
             for j in range(self.pade_order):
-                b_j = self.b_coeffs[j]
+                b_j = self.b_coeffs_raw[j]
                 d_j = self.d_coeffs[j + 1]
 
                 # Solve (1 + b_j * X) w_j = psi
                 w_j = self._solve_pade_term(
-                    psi_target=psi,
+                    psi=psi,
                     b_j=b_j,
-                    N_op=N_op,
+                    N_vals=N_vals,
                 )
                 psi_next += d_j * w_j
 
-            # Apply global phase shift
+            # 4. Apply global phase shift
             psi = phase_shift * psi_next
 
-            # Enforce BCs
-            if self.transform_type in ["DST"]:
-                psi[0] = 0.0
-                psi[-1] = 0.0
-
-            # Store beam history
             if self.store_beam:
                 self.beam_history[:, i + 1] = psi
 
@@ -229,95 +192,95 @@ class SpectralPadeSolver(OpticalWaveSolver):
         return self
 
     def _solve_pade_term(
-        self, psi: np.ndarray, b_j: complex, N_op: np.ndarray
+        self, psi: np.ndarray, b_j: complex, N_vals: np.ndarray
     ) -> np.ndarray:
         """
-        Solves the linear system (1 + b_j * X) w_j = psi using Preconditioned Richardson Iteration.
+        Solves (1 + b_j * X) w = psi using Preconditioned Richardson Iteration.
 
-        Operator Aj = 1 + b_j X
-
-        where X = L (diffraction) + N (refraction)
-
-        Preconditioner M_j = M_L M_N = (1 + b_j L)(1 + b_j N)
-
-        Preconditioned Operator: M_j^-1 Aj = M_N^-1(I + M_L^-1 b_j N)
+        Operator X = k0^-2 * L + N
+        So A_j = 1 + b_j(k0^-2 L + N)
         """
-        # Preconditioner: Split-Step Approach M = M_L M_N = (1 + b_j L)(1 + b_j N)
-        # Apply Preconditioner M_N^-1 M_L^-1
-        M_n = 1.0 + b_j * N_op
-        prop_kernel = 1.0 + b_j * self.Lambda
+        # --- 1. Define Operator Weights ---
+        # b_j applies directly to N (dimensionless)
+        # b_j/k0^2 applies to L (units m^-2) to make it dimensionless
+        b_diff = b_j / self.k0sq
 
-        # Initial guess w_0 = M^-1 psi, ignore singularities
+        # Spectral Kernel for (1 + b_j/k^2 L)
+        M_L_kernel = 1.0 + b_diff * self.Lambda
+
+        # Real-space Kernel for (1 + b_j N)
+        M_N_vals = 1.0 + b_j * N_vals
+
+        # --- 2. Initial Guess w0 ---
+        # Preconditioner M^-1 = (1+bN)^-1 (1+bL)^-1 (Split-Step Preconditioner)
+
+        # Inverse L part
         with np.errstate(divide="ignore", invalid="ignore"):
-            w = self._apply_diffraction(psi, prop_kernel, invert=True) / M_n
+            inv_M_L_kernel = 1.0 / M_L_kernel
+            inv_M_L_kernel[np.isclose(M_L_kernel, 0)] = 0.0
 
-        # Iterative update
+        # Apply M^-1 psi
+        w0_temp = self._apply_diffraction(psi, inv_M_L_kernel)
+        w0 = w0_temp / M_N_vals
+
+        # --- 3. Richardson Iteration ---
+        # w_{k+1} = w_k + M^-1 (psi - A w_k)
+        w = w0.copy()
+
         for _ in range(self.max_iter):
-            # 1. Apply Preconditioned Operator M_j^-1 Aj w = M_N^-1 (I + M_L^-1 b_j N) w
-            # Compute (I + M_L^-1 b_j N) w
-            # Step 1a: Diagonal Refraction Update b_j N w
-            N_w = b_j * N_op * w
-            # Step 1b: Spectral Diffraction Update M_L^-1 (b_j N w)
-            L_w = self._apply_diffraction(N_w, prop_kernel, invert=True)
+            # A. Compute A * w = (1 + b L_scaled + b N) w
+            # L term
+            L_w = self._apply_diffraction(w, self.Lambda)
+            term_L = b_diff * L_w
 
-            # Step 1c: Apply M_N^-1 and add identity
-            A_w = w + L_w / M_n
+            # N term
+            term_N = b_j * N_vals * w
 
-            # Residual
+            # A w
+            A_w = w + term_L + term_N
+
+            # B. Residual
             residual = psi - A_w
 
-            # 2. Apply Preconditioner M_j^-1 (Option B: Split-Step)
-            # M^-1 v = (1 + b_j N)^-1 (1 + b_j L)^-1 v
+            # C. Apply Preconditioner M^-1 to residual
+            correction_L = self._apply_diffraction(residual, inv_M_L_kernel)
+            correction = correction_L / M_N_vals
 
-            # Step 2a: Spectral Diffraction Update (1 + b_j L)^-1
-            prop_kernel = 1 + b_j * self.Lambda
-            v_step1 = self._apply_diffraction(residual, prop_kernel, invert=True)
-
-            # Step 2b: Diagonal Refraction Update (1 + b_j N)^-1
-            # N operator here acts as multiplication by (n^2-1)
-            # The PDF defines N as strictly the potential part.
-            denom = 1.0 + b_j * N_op
-            correction = v_step1 / denom
-
-            # Update w
             w += correction
 
         return w
 
     def _apply_diffraction(
-        self, psi: np.ndarray, spectral_kernel: np.ndarray, invert: bool
+        self, psi: np.ndarray, spectral_kernel: np.ndarray
     ) -> np.ndarray:
         """
-        Applies the diffraction operator or its inverse in spectral space.
-        Args:
-            psi: Input field
-            spectral_kernel: Spectral multiplier
-            invert: If True, applies the inverse operator
-        Returns:
-            Transformed field
+        Applies a spectral operator.
+        For DST/DCT, handles Real and Imaginary parts separately.
         """
-        if invert:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                spectral_kernel = 1 / spectral_kernel
-            # Remove singularities
-            spectral_kernel[np.isclose(spectral_kernel, 0)] = 0.0
-
         if self.transform_type == "FFT":
-            return np.fft.ifft(np.fft.fft(psi) * spectral_kernel)
+            return np.ifft(np.fft.fft(psi) * spectral_kernel)
+
         elif self.transform_type == "DST":
+            # Separate Real and Imaginary parts
+            # Use Type 1 for Dirichlet BCs (u=0 at boundaries)
             psi_real = dst(np.real(psi), type=2, norm="ortho")
             psi_imag = dst(np.imag(psi), type=2, norm="ortho")
             psi_spectral = (psi_real + 1j * psi_imag) * spectral_kernel
             out_real = idst(np.real(psi_spectral), type=2, norm="ortho")
             out_imag = idst(np.imag(psi_spectral), type=2, norm="ortho")
+
             return out_real + 1j * out_imag
+
         elif self.transform_type == "DCT":
+            # Type 2 implies Neumann BCs usually, but often Type 2 is default for DCT.
+            # Consistent separation logic:
             psi_real = dct(np.real(psi), type=2, norm="ortho")
             psi_imag = dct(np.imag(psi), type=2, norm="ortho")
             psi_spectral = (psi_real + 1j * psi_imag) * spectral_kernel
             out_real = idct(np.real(psi_spectral), type=2, norm="ortho")
             out_imag = idct(np.imag(psi_spectral), type=2, norm="ortho")
             return out_real + 1j * out_imag
+
         return psi
 
     def get_exit_wave(self, n_crop: Optional[int] = None) -> np.ndarray:
