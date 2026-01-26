@@ -15,8 +15,7 @@ This suite currently benchmarks two primary forward-model propagation techniques
 * **Multislice (`MultisliceSolver`):**
     The standard Fourier Split-Step method used in electron microscopy and X-ray ptychography. It utilizes FFTs (or Discrete Sine Transforms) to alternate between diffraction and refraction.
 
-### Roadmap
-* **Spectral Padé (`SpectralPadeSolver`):** An upcoming implementation that combines the wide-angle accuracy of Padé approximants with the exact derivative calculation and speed of spectral methods.
+* **Spectral Padé (`SpectralPadeSolver`):** An implementation that combines the wide-angle accuracy of Padé approximants with the exact derivative calculation and speed of spectral methods. This implementation is directly adapted from the **SSSP** solver.
 
 ## Acknowledgements
 
