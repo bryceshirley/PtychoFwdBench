@@ -47,7 +47,7 @@ solvers:
     type: "SPECTRAL_PADE"
     solver_params:
       pade_order: 4
-      max_iter: 1
+      max_iter: 4
       transform_type: "FFT"
 
   - name: "Multislice (FFT)"
