@@ -20,6 +20,10 @@ This suite currently benchmarks two primary forward-model propagation techniques
 
 ## Acknowledgements
 
-The core Finite Difference solver (`PtychoPadeSolver`) is uses an adapted **PyRAM** (Python Range-dependent Acoustic Model) by **Marcus Donnelly**. We gratefully acknowledge his work in making this robust solver available.
+The core Finite Difference solver (`PtychoPadeSolver`) is uses an adapted **PyRAM** (Python Range-dependent Acoustic Model) by **Marcus Donnelly**. We gratefully acknowledge his work in making this solver available.
 
 * **Original PyRAM Repository:** [https://github.com/marcuskd/pyram](https://github.com/marcuskd/pyram)
+
+The core Spectral solver (`SpectralPadeSolver`) is uses an adapted **SSSP** (Spectral Split-Step Padé) by **Daniel Walsken**. We gratefully acknowledge his work in making this solver available.
+
+* **Original SSSP Repository:** [https://git.uni-wuppertal.de/walsken/sssp](https://git.uni-wuppertal.de/walsken/sssp)
