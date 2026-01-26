@@ -5,7 +5,7 @@ from time import process_time
 from typing import Dict, Any, Tuple, Optional
 
 # --- PyRAM Imports ---
-from pyram_ptycho.generators import (
+from ptycho_fwd_bench.generators import (
     generate_blob_phantom,
     generate_gravel_phantom,
     generate_waveguide_phantom,
@@ -14,18 +14,18 @@ from pyram_ptycho.generators import (
     interpolate_to_coarse,
     get_probe_field,
 )
-from pyram_ptycho.ptycho_solvers import create_solver
-from pyram_ptycho.utils import (
+from ptycho_fwd_bench.ptycho_solvers import create_solver
+from ptycho_fwd_bench.utils import (
     setup_output_directory,
     setup_logging,
     save_ground_truth,
     load_ground_truth,
 )
-from pyram_ptycho.physics import (
+from ptycho_fwd_bench.physics import (
     parse_simulation_parameters,
     validate_sampling_conditions,
 )
-import pyram_ptycho.plotters as plotters
+import ptycho_fwd_bench.plotters as plotters
 
 
 # --- Generator Map ---

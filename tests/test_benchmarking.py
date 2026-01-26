@@ -3,7 +3,7 @@ import numpy as np
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
-import pyram_ptycho.benchmarking as benchmarking
+import ptycho_fwd_bench.benchmarking as benchmarking
 
 # =============================================================================
 # FIXTURES (Standard Setup Data)
@@ -58,8 +58,8 @@ def mock_config(mock_sim_params):
 
 class TestSimulationInputs:
     # This ensures the code looks up our mock when it checks the dictionary.
-    @patch.dict("pyram_ptycho.benchmarking.GENERATOR_MAP", clear=False)
-    @patch("pyram_ptycho.benchmarking.get_probe_field")
+    @patch.dict("ptycho_fwd_bench.benchmarking.GENERATOR_MAP", clear=False)
+    @patch("ptycho_fwd_bench.benchmarking.get_probe_field")
     def test_generate_simulation_inputs_success(self, mock_probe, mock_sim_params):
         """Test that inputs are generated using correct parameters."""
 
@@ -89,7 +89,7 @@ class TestSimulationInputs:
 
 
 class TestComputeGroundTruth:
-    @patch("pyram_ptycho.benchmarking.create_solver")
+    @patch("ptycho_fwd_bench.benchmarking.create_solver")
     def test_compute_ground_truth_flow(self, mock_create, mock_sim_params):
         """Test that the solver is initialized, run, and results extracted."""
 
@@ -135,9 +135,9 @@ class TestComputeGroundTruth:
 
 
 class TestBenchmarkLoop:
-    @patch("pyram_ptycho.benchmarking.plotters")
-    @patch("pyram_ptycho.benchmarking.create_solver")
-    @patch("pyram_ptycho.benchmarking.interpolate_to_coarse")
+    @patch("ptycho_fwd_bench.benchmarking.plotters")
+    @patch("ptycho_fwd_bench.benchmarking.create_solver")
+    @patch("ptycho_fwd_bench.benchmarking.interpolate_to_coarse")
     def test_run_benchmark_loop(
         self, mock_interp, mock_create, mock_plotters, mock_config, mock_sim_params
     ):
@@ -187,16 +187,16 @@ class TestFullBenchmarkOrchestrator:
         new_callable=mock.mock_open,
         read_data="experiment:\n  name: TEST",
     )
-    @patch("pyram_ptycho.benchmarking.yaml.safe_load")
-    @patch("pyram_ptycho.benchmarking.setup_output_directory")
-    @patch("pyram_ptycho.benchmarking.setup_logging")
-    @patch("pyram_ptycho.benchmarking.parse_simulation_parameters")
-    @patch("pyram_ptycho.benchmarking.validate_sampling_conditions")
-    @patch("pyram_ptycho.benchmarking.generate_simulation_inputs")
-    @patch("pyram_ptycho.benchmarking.compute_ground_truth")
-    @patch("pyram_ptycho.benchmarking.run_benchmark_loop")
+    @patch("ptycho_fwd_bench.benchmarking.yaml.safe_load")
+    @patch("ptycho_fwd_bench.benchmarking.setup_output_directory")
+    @patch("ptycho_fwd_bench.benchmarking.setup_logging")
+    @patch("ptycho_fwd_bench.benchmarking.parse_simulation_parameters")
+    @patch("ptycho_fwd_bench.benchmarking.validate_sampling_conditions")
+    @patch("ptycho_fwd_bench.benchmarking.generate_simulation_inputs")
+    @patch("ptycho_fwd_bench.benchmarking.compute_ground_truth")
+    @patch("ptycho_fwd_bench.benchmarking.run_benchmark_loop")
     @patch(
-        "pyram_ptycho.benchmarking.save_ground_truth"
+        "ptycho_fwd_bench.benchmarking.save_ground_truth"
     )  # Optional, mocked just in case
     def test_run_full_benchmark_compute_mode(
         self,
@@ -233,14 +233,14 @@ class TestFullBenchmarkOrchestrator:
         mock_save.assert_not_called()  # Config didn't have save_path set in mock_config fixture
 
     @patch("builtins.open", new_callable=mock.mock_open, read_data="experiment: TEST")
-    @patch("pyram_ptycho.benchmarking.yaml.safe_load")
-    @patch("pyram_ptycho.benchmarking.setup_output_directory")
-    @patch("pyram_ptycho.benchmarking.setup_logging")
-    @patch("pyram_ptycho.benchmarking.parse_simulation_parameters")
-    @patch("pyram_ptycho.benchmarking.validate_sampling_conditions")
-    @patch("pyram_ptycho.benchmarking.load_ground_truth")  # <-- Key Mock
-    @patch("pyram_ptycho.benchmarking.run_benchmark_loop")
-    @patch("pyram_ptycho.benchmarking.compute_ground_truth")  # Should NOT be called
+    @patch("ptycho_fwd_bench.benchmarking.yaml.safe_load")
+    @patch("ptycho_fwd_bench.benchmarking.setup_output_directory")
+    @patch("ptycho_fwd_bench.benchmarking.setup_logging")
+    @patch("ptycho_fwd_bench.benchmarking.parse_simulation_parameters")
+    @patch("ptycho_fwd_bench.benchmarking.validate_sampling_conditions")
+    @patch("ptycho_fwd_bench.benchmarking.load_ground_truth")  # <-- Key Mock
+    @patch("ptycho_fwd_bench.benchmarking.run_benchmark_loop")
+    @patch("ptycho_fwd_bench.benchmarking.compute_ground_truth")  # Should NOT be called
     def test_run_full_benchmark_load_mode(
         self,
         mock_compute,

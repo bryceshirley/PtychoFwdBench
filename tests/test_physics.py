@@ -2,7 +2,7 @@ import warnings
 import pytest
 import numpy as np
 from typing import Dict, Any
-from pyram_ptycho.physics import (
+from ptycho_fwd_bench.physics import (
     parse_simulation_parameters,
     validate_sampling_conditions,
 )

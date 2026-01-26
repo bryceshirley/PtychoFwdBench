@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from pyram_ptycho.ptycho_solvers import (
+from ptycho_fwd_bench.ptycho_solvers import (
     create_solver,
     MultisliceSolver,
     PtychoPadeSolver,

@@ -1,6 +1,6 @@
 import argparse
 import os
-from pyram_ptycho.benchmarking import run_full_benchmark
+from ptycho_fwd_bench.benchmarking import run_full_benchmark
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PyRAM Benchmark Runner")

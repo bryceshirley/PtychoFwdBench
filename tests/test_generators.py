@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from pyram_ptycho.generators import (
+from ptycho_fwd_bench.generators import (
     get_probe_field,
     generate_empty_phantom,
     generate_blob_phantom,

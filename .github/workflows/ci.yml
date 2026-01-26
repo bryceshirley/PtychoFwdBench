@@ -38,10 +38,10 @@ jobs:
       - name: Run PyRAM Core Tests (Unittest)
         env:
           # PYTHONPATH still needs to point to the package root
-          PYTHONPATH: ${{ github.workspace }}/pyram_ptycho
+          PYTHONPATH: ${{ github.workspace }}/ptycho_fwd_bench
         run: |
           # Change directory to where the data files are
-          cd pyram_ptycho/pyram/Tests
-          
+          cd ptycho_fwd_bench/pyram/Tests
+
           # Run tests from the current directory (.)
           uv run python -m unittest discover . -p "Test*.py" -v

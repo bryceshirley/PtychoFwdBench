@@ -5,7 +5,7 @@ results/
 # Ignore generated images and transient data files
 *.png
 *.pff
-pyram_ptycho/pyram/Tests/tl.line
+ptycho_fwd_bench/pyram/Tests/tl.line
 
 # Ruff cache directory
 .ruff_cache/
@@ -46,3 +46,4 @@ Thumbs.db
 
 # Data files
 *.npz
+*.txt

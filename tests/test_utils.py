@@ -4,7 +4,7 @@ import subprocess
 import numpy as np
 import pytest
 from unittest import mock
-from pyram_ptycho.utils import (
+from ptycho_fwd_bench.utils import (
     get_git_revision_hash,
     setup_output_directory,
     setup_logging,
@@ -59,7 +59,7 @@ def test_setup_output_directory(tmp_path):
     dummy_config = tmp_path / "dummy_config.yaml"
     dummy_config.write_text("experiment: test")
 
-    with mock.patch("pyram_ptycho.utils.datetime") as mock_date:
+    with mock.patch("ptycho_fwd_bench.utils.datetime") as mock_date:
         # Freeze time for consistent folder naming
         mock_date.now.return_value.strftime.return_value = "20230101_120000"
 

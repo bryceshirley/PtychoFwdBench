@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, Tuple
 from abc import ABC, abstractmethod
 
 from .pyram.PyRAM import PyRAM
-from pyram_ptycho.generators import get_probe_field
+from ptycho_fwd_bench.generators import get_probe_field
 
 # --------------------------------------------
 # Solver Factory
