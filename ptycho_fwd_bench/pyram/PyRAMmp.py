@@ -3,7 +3,7 @@ PyRAMmp class definition
 """
 
 from multiprocessing.pool import Pool
-from pyram.PyRAM import PyRAM
+from .PyRAM import PyRAM
 from time import sleep
 
 

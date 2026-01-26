@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple
 from abc import ABC, abstractmethod
 
 from .pyram.PyRAM import PyRAM
+from .pyram.PyRAMmp import PyRAMmp
 from .sssp.pade import pade_coefficients
 from ptycho_fwd_bench.generators import get_probe_field
 
@@ -158,9 +159,6 @@ class SpectralPadeSolver:
             self.beam_history = np.zeros((self.nx, self.nz_steps), dtype=complex)
             self.beam_history[:, 0] = psi
 
-        # Phase shift term e^{ik Delta z}
-        phase_shift = np.exp(1j * self.dz * self.k0)
-
         # Propagation loop
         for i in range(self.nz_steps - 1):
             # 1. Initialize Summation: d0 * psi
@@ -181,9 +179,7 @@ class SpectralPadeSolver:
                     N_vals=N_vals,
                 )
                 psi_next += d_j * w_j
-
-            # 4. Apply global phase shift
-            psi = phase_shift * psi_next
+            psi = psi_next
 
             if self.store_beam:
                 self.beam_history[:, i + 1] = psi
@@ -261,19 +257,15 @@ class SpectralPadeSolver:
             return np.ifft(np.fft.fft(psi) * spectral_kernel)
 
         elif self.transform_type == "DST":
-            # Separate Real and Imaginary parts
-            # Use Type 1 for Dirichlet BCs (u=0 at boundaries)
-            psi_real = dst(np.real(psi), type=2, norm="ortho")
-            psi_imag = dst(np.imag(psi), type=2, norm="ortho")
+            psi_real = dst(np.real(psi), type=1, norm="ortho")
+            psi_imag = dst(np.imag(psi), type=1, norm="ortho")
             psi_spectral = (psi_real + 1j * psi_imag) * spectral_kernel
-            out_real = idst(np.real(psi_spectral), type=2, norm="ortho")
-            out_imag = idst(np.imag(psi_spectral), type=2, norm="ortho")
+            out_real = idst(np.real(psi_spectral), type=1, norm="ortho")
+            out_imag = idst(np.imag(psi_spectral), type=1, norm="ortho")
 
             return out_real + 1j * out_imag
 
         elif self.transform_type == "DCT":
-            # Type 2 implies Neumann BCs usually, but often Type 2 is default for DCT.
-            # Consistent separation logic:
             psi_real = dct(np.real(psi), type=2, norm="ortho")
             psi_imag = dct(np.imag(psi), type=2, norm="ortho")
             psi_spectral = (psi_real + 1j * psi_imag) * spectral_kernel
@@ -434,6 +426,29 @@ class PtychoPadeSolver(PyRAM, OpticalWaveSolver):
         if "CP Grid" in res:
             return res["CP Grid"]
         return getattr(self, "cpg", None)
+
+
+# --------------------------------------------
+# PyRAM Pade Solver Wrapper
+# --------------------------------------------
+
+
+class PtychoPadeSolverMP(PyRAMmp, OpticalWaveSolver):
+    """
+    PyRAM Pade solver wrapper.
+    """
+
+    def __init__(self):
+        pass
+
+    def run(self, psi_init: Optional[np.ndarray] = None) -> "PtychoPadeSolverMP":
+        raise NotImplementedError("Multiprocessing PyRAM Pade Solver not implemented.")
+
+    def get_exit_wave(self, n_crop: Optional[int] = None) -> np.ndarray:
+        raise NotImplementedError("Multiprocessing PyRAM Pade Solver not implemented.")
+
+    def get_beam_field(self) -> Optional[np.ndarray]:
+        raise NotImplementedError("Multiprocessing PyRAM Pade Solver not implemented.")
 
 
 # --------------------------------------------
