@@ -44,6 +44,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         transform_type: str = "DST",
         max_iter: int = 4,
         store_beam: bool = False,
+        envelope: bool = True,
     ):
         super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
         self.pade_order = pade_order
@@ -52,7 +53,9 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         # Pade Coeffs
         hk0 = self.dz * self.k0
-        self.b_coeffs_raw, self.d_coeffs = pade_coefficients(hk0, self.pade_order)
+        self.b_coeffs_raw, self.d_coeffs = pade_coefficients(
+            hk0, self.pade_order, envelope=envelope
+        )
 
         # Spectral Operator Lambda = -kx^2
         kx = get_spectral_coords(self.nx, self.dx, self.transform_type)
