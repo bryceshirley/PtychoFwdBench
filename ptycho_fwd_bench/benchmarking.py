@@ -14,7 +14,7 @@ from ptycho_fwd_bench.generators import (
     interpolate_to_coarse,
     get_probe_field,
 )
-from ptycho_fwd_bench.ptycho_solvers import create_solver
+from ptycho_fwd_bench.solver_factory import create_solver
 from ptycho_fwd_bench.utils import (
     setup_output_directory,
     setup_logging,

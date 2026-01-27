@@ -27,6 +27,8 @@ dependencies = [
     "pyyaml",
     "ruff>=0.14.14",
     "pytest>=8.4.2",
+    "tqdm>=4.67.1",
+    "matplot2tikz>=0.4.2",
     "pre-commit>=4.3.0",
 ]
 

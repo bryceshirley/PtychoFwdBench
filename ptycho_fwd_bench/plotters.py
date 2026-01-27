@@ -149,6 +149,8 @@ def plot_beam_propagation(
         ax_gt.set_xticks([])  # Hide X-ticks if other plots follow
     else:
         ax_gt.set_xlabel("Z (um)")
+    # Colorbar limits
+    im_gt.set_clim(0, np.max(np.abs(beam_gt)) * 1.1)
     plt.colorbar(im_gt, ax=ax_gt, label="|u|")
 
     # --- 2. Plot Each Solver ---
@@ -163,7 +165,8 @@ def plot_beam_propagation(
             ax.set_xlabel("Z (um)")
         else:
             ax.set_xticks([])
-
+        # Colorbar limits
+        im.set_clim(0, np.max(np.abs(beam_gt)) * 1.1)
         plt.colorbar(im, ax=ax, label="|u|")
 
     plt.tight_layout()

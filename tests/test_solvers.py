@@ -1,10 +1,7 @@
 import pytest
 import numpy as np
-from ptycho_fwd_bench.ptycho_solvers import (
-    create_solver,
-    MultisliceSolver,
-    PtychoPadeSolver,
-)
+from ptycho_fwd_bench.solver_factory import create_solver
+from ptycho_fwd_bench.solvers import FiniteDifferencePadeSolver, MultisliceSolver
 
 # =============================================================================
 # 1. FIXTURES & MOCKS
@@ -54,7 +51,7 @@ def test_create_solver_pade(basic_setup):
         dz=dz,
     )
 
-    assert isinstance(solver, PtychoPadeSolver)
+    assert isinstance(solver, FiniteDifferencePadeSolver)
     assert solver.pade_order == 4
 
 
@@ -75,14 +72,6 @@ def test_create_solver_unknown_raises(basic_setup):
 
     with pytest.raises(ValueError, match="Unknown solver type"):
         create_solver("MAGIC_SOLVER", {}, n_map, sim_params, dz)
-
-
-def test_create_solver_spectral_pade_raises_not_implemented(basic_setup):
-    n_map, sim_params, dz = basic_setup
-    solver = create_solver("SPECTRAL_PADE", {}, n_map, sim_params, dz)
-
-    with pytest.raises(NotImplementedError):
-        solver.run()
 
 
 # =============================================================================
@@ -169,6 +158,7 @@ def test_multislice_dst_kernel_cache(basic_setup):
         sim_params["probe_dia"],
         sim_params["probe_focus"],
         transform_type="DST",
+        dz=dz,
     )
 
     k1 = solver._get_propagation_kernel(dz)
@@ -187,7 +177,7 @@ def test_multislice_dst_kernel_cache(basic_setup):
 def test_pade_solver_initialization(basic_setup):
     n_map, sim_params, dz = basic_setup
 
-    solver = PtychoPadeSolver(
+    solver = FiniteDifferencePadeSolver(
         n_map=n_map,
         dx=sim_params["dx"],
         wavelength=sim_params["wavelength"],
@@ -205,7 +195,7 @@ def test_pade_solver_initialization(basic_setup):
 def test_pade_solver_run_and_inject(basic_setup, psi_init):
     n_map, sim_params, dz = basic_setup
 
-    solver = PtychoPadeSolver(
+    solver = FiniteDifferencePadeSolver(
         n_map=n_map,
         dx=sim_params["dx"],
         wavelength=sim_params["wavelength"],
@@ -228,7 +218,7 @@ def test_pade_solver_padding_logic(basic_setup, psi_init):
     """Ensure psi_init is padded before being passed to PyRAM."""
     n_map, sim_params, dz = basic_setup
 
-    solver = PtychoPadeSolver(
+    solver = FiniteDifferencePadeSolver(
         n_map=n_map,
         dx=sim_params["dx"],
         wavelength=sim_params["wavelength"],
