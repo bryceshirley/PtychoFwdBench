@@ -1,3 +1,4 @@
+import re
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -60,7 +61,7 @@ def plot_fine_vs_coarse(
 
     plt.tight_layout()
     plt.savefig(
-        os.path.join(output_dir, f"{test_case_name}_4_fine_coarse.png"), dpi=150
+        os.path.join(output_dir, f"{test_case_name}_3_fine_coarse.png"), dpi=150
     )
     plt.close(fig)
 
@@ -121,54 +122,67 @@ def plot_beam_propagation(
     test_case_name: str,
 ):
     """
-    Plots the full beam propagation history (Z-X plane).
-    Dynamically creates subplots for GT + every solver in beam_histories.
+    Plots the beam propagation history (Z-X plane).
+    Creates a 'beam_comparisons' folder and saves a separate plot
+    for each solver compared against the Ground Truth.
     """
+    # 1. Setup Output Directory
+    beams_dir = os.path.join(output_dir, "beam_comparisons")
+    os.makedirs(beams_dir, exist_ok=True)
+
+    # 2. Define Extents and Limits
     # Extent: [Left, Right, Bottom, Top] -> [Z_min, Z_max, X_max, X_min]
     extent_map = [0, sample_thick_um, physical_width_um, 0]
 
-    # Calculate rows: 1 for GT + 1 for each solver
-    n_solvers = len(beam_histories)
-    rows = 1 + n_solvers
+    # Establish consistent color limits based on Ground Truth
+    # This ensures all plots share the exact same intensity scale.
+    v_min = 0
+    v_max = np.max(np.abs(beam_gt)) * 1.1
 
-    # Adjust figure height based on number of solvers
-    fig = plt.figure(figsize=(16, 3 * rows))
-    gs = fig.add_gridspec(rows, 1, hspace=0.3)
+    # 3. Iterate through each solver and plot against GT
+    for name, beam_solver in beam_histories.items():
+        # Create a figure with 2 rows: Top=GT, Bottom=Solver
+        fig = plt.figure(figsize=(12, 8), constrained_layout=True)
+        gs = fig.add_gridspec(2, 1)
 
-    # --- 1. Plot Ground Truth (Always Top) ---
-    ax_gt = fig.add_subplot(gs[0, 0])
-    im_gt = ax_gt.imshow(
-        np.abs(beam_gt), extent=extent_map, aspect="auto", cmap="inferno"
-    )
-    ax_gt.set_title("Ground Truth Beam (Fine Padé)")
-    ax_gt.set_ylabel("X (um)")
-    if n_solvers > 0:
-        ax_gt.set_xticks([])  # Hide X-ticks if other plots follow
-    else:
+        # --- Top: Ground Truth ---
+        ax_gt = fig.add_subplot(gs[0, 0])
+        im_gt = ax_gt.imshow(
+            np.abs(beam_gt),
+            extent=extent_map,
+            aspect="auto",
+            cmap="inferno",
+            vmin=v_min,
+            vmax=v_max,
+        )
+        ax_gt.set_title("Reference: Ground Truth (Fine Padé)")
+        ax_gt.set_ylabel("X (um)")
         ax_gt.set_xlabel("Z (um)")
-    # Colorbar limits
-    im_gt.set_clim(0, np.max(np.abs(beam_gt)) * 1.1)
-    plt.colorbar(im_gt, ax=ax_gt, label="|u|")
+        plt.colorbar(im_gt, ax=ax_gt, label="|u|")
 
-    # --- 2. Plot Each Solver ---
-    for idx, (name, beam) in enumerate(beam_histories.items(), start=1):
-        ax = fig.add_subplot(gs[idx, 0])
-        im = ax.imshow(np.abs(beam), extent=extent_map, aspect="auto", cmap="inferno")
-        ax.set_title(f"Solver: {name} (N={step_count_disp})")
-        ax.set_ylabel("X (um)")
+        # --- Bottom: Specific Solver ---
+        ax_sol = fig.add_subplot(gs[1, 0])
+        im_sol = ax_sol.imshow(
+            np.abs(beam_solver),
+            extent=extent_map,
+            aspect="auto",
+            cmap="inferno",
+            vmin=v_min,
+            vmax=v_max,
+        )
+        ax_sol.set_title(f"Solver: {name} (N={step_count_disp})")
+        ax_sol.set_ylabel("X (um)")
+        ax_sol.set_xlabel("Z (um)")
+        plt.colorbar(im_sol, ax=ax_sol, label="|u|")
 
-        # Only show X-label on the very bottom plot
-        if idx == n_solvers:
-            ax.set_xlabel("Z (um)")
-        else:
-            ax.set_xticks([])
-        # Colorbar limits
-        im.set_clim(0, np.max(np.abs(beam_gt)) * 1.1)
-        plt.colorbar(im, ax=ax, label="|u|")
+        # --- Save ---
+        # Clean filename: remove spaces, parentheses, etc.
+        clean_name = re.sub(r"[^\w\-_]", "_", name)
+        filename = f"{test_case_name}_vs_{clean_name}.png"
+        save_path = os.path.join(beams_dir, filename)
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f"{test_case_name}_2_beams.png"), dpi=150)
-    plt.close(fig)
+        plt.savefig(save_path, dpi=150)
+        plt.close(fig)
 
 
 def plot_convergence_metrics(
@@ -221,6 +235,6 @@ def plot_convergence_metrics(
 
     plt.tight_layout()
     plt.savefig(
-        os.path.join(output_dir, f"{test_case_name}_3_convergence.png"), dpi=150
+        os.path.join(output_dir, f"{test_case_name}_2_convergence.png"), dpi=150
     )
     plt.close(fig)

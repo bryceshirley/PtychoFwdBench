@@ -172,13 +172,8 @@ class TestBenchmarkLoop:
 
         # 2. Check Plotting calls
         mock_plotters.plot_fine_vs_coarse.assert_called_once()
-        mock_plotters.plot_setup_and_exit_wave.assert_called_once()
-        mock_plotters.plot_metrics_and_phase.assert_called_once()
-        # Beam history not saved for all, but maybe for the index 0
-        # If beam_gt is None, plot_beam_propagation might be skipped or called differently depending on implementation
-
-        # 3. Verify Error Calculation Logic implicitly
-        # (If logic crashed on shape mismatch, test would fail)
+        mock_plotters.plot_exit_wave_comparison.assert_called_once()
+        mock_plotters.plot_convergence_metrics.assert_called_once()
 
 
 class TestFullBenchmarkOrchestrator:
