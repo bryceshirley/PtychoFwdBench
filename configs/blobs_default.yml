@@ -52,6 +52,24 @@ solvers:
     solver_params:
       pade_order: 2
 
+  - name: "Spectral Pade Split Step Precon (Order 4)"
+    type: "SPECTRAL_PADE"
+    solver_params:
+      pade_order: 4
+      max_iter: 4
+      transform_type: "FFT"
+      solver_type: "bicgstab"
+      preconditioner: "split_step"
+
+  - name: "Spectral Pade Shifted Mean Precon (Order 4)"
+    type: "SPECTRAL_PADE"
+    solver_params:
+      pade_order: 4
+      max_iter: 4
+      transform_type: "FFT"
+      solver_type: "bicgstab"
+      preconditioner: "shifted_mean"
+
   - name: "Multislice (DST, Symmetric)"
     type: "MULTISLICE"
     solver_params:
@@ -65,5 +83,5 @@ solvers:
       symmetric: false
 
 benchmark:
-  step_counts: [64, 128, 256, 512]
+  step_counts: [8, 16, 32, 64, 128, 256]
   save_beam_idx: 0
