@@ -65,25 +65,16 @@ def plot_fine_vs_coarse(
     plt.close(fig)
 
 
-def plot_setup_and_exit_wave(
-    n_map_fine: np.ndarray,
-    n_map_coarse: np.ndarray,
+def plot_exit_wave_comparison(
     psi_gt: np.ndarray,
     final_waves: Dict[str, np.ndarray],
     physical_width_um: float,
-    sample_thick_um: float,
     test_case_name: str,
     output_dir: str,
-    padding_px: int,
 ):
     """
-    Plots the Refractive Index maps (Fine) and the Exit Wave Amplitude comparison.
+    Plots the Exit Wave Amplitude and Phase on a single figure with two subplots.
     """
-    extent_map = [0, sample_thick_um, physical_width_um, 0]  # Z, X
-
-    # Crop padding from display map
-    n_view = n_map_fine[padding_px:-padding_px, :]
-
     # X-axis for 1D plot
     n_physical_plot = len(psi_gt)
     x_axis = np.linspace(0, physical_width_um, n_physical_plot)
@@ -91,32 +82,38 @@ def plot_setup_and_exit_wave(
     fig = plt.figure(figsize=(16, 6))
     gs = fig.add_gridspec(1, 2)
 
-    # 1. Refractive Index Map
+    # --- 1. Exit Wave Amplitude ---
     ax1 = fig.add_subplot(gs[0, 0])
-    im = ax1.imshow(np.real(n_view), extent=extent_map, aspect="auto", cmap="bone")
-    ax1.set_title(f"Refractive Index Fine ({test_case_name})")
-    ax1.set_ylabel("X (um)")
-    ax1.set_xlabel("Z (um)")
-    plt.colorbar(im, ax=ax1, label="Re[n]")
-
-    # 2. Exit Wave Amplitude
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax2.plot(x_axis, np.abs(psi_gt), "k-", lw=2, label="GT")
+    ax1.plot(x_axis, np.abs(psi_gt), "k-", lw=2, label="GT")
     for name, wave in final_waves.items():
-        ax2.plot(x_axis, np.abs(wave), "--", label=name)
-    ax2.set_title("Exit Wave Amplitude")
+        ax1.plot(x_axis, np.abs(wave), "--", label=name)
+
+    ax1.set_title(f"Exit Wave Amplitude ({test_case_name})")
+    ax1.set_xlabel("X (um)")
+    ax1.set_ylabel(r"|\psi|")
+    ax1.legend()
+    ax1.grid(alpha=0.3)
+
+    # --- 2. Exit Wave Phase ---
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax2.plot(x_axis, np.angle(psi_gt), "k-", lw=2, label="GT")
+    for name, wave in final_waves.items():
+        ax2.plot(x_axis, np.angle(wave), "--", label=name)
+
+    ax2.set_title(f"Exit Wave Phase ({test_case_name})")
     ax2.set_xlabel("X (um)")
+    ax2.set_ylabel("Phase (rad)")
     ax2.legend()
     ax2.grid(alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f"{test_case_name}_1_setup_exit.png"), dpi=150)
+    plt.savefig(os.path.join(output_dir, f"{test_case_name}_1_exit_waves.png"), dpi=150)
     plt.close(fig)
 
 
 def plot_beam_propagation(
     beam_gt: np.ndarray,
-    beam_histories: Dict[str, np.ndarray],  # CHANGED: Now takes a dict
+    beam_histories: Dict[str, np.ndarray],
     physical_width_um: float,
     sample_thick_um: float,
     step_count_disp: int,
@@ -174,43 +171,56 @@ def plot_beam_propagation(
     plt.close(fig)
 
 
-def plot_metrics_and_phase(
+def plot_convergence_metrics(
     dz_values: List[float],
     methods_data: Dict,
-    psi_gt: np.ndarray,
-    final_waves: Dict[str, np.ndarray],
-    physical_width_um: float,
     output_dir: str,
     test_case_name: str,
 ):
-    n_pts = len(psi_gt)
-    x_axis = np.linspace(0, physical_width_um, n_pts)
+    """
+    Plots metric convergence analysis.
 
+    Subplot 1: Relative Error vs Step Size
+    Subplot 2: Relative Error vs Execution Time
+
+    Expects methods_data[name] to contain keys: "err", "times", "style"
+    """
     fig = plt.figure(figsize=(16, 6))
     gs = fig.add_gridspec(1, 2)
 
-    # 1. Convergence
+    # --- 1. Convergence (Error vs Step Size) ---
     ax1 = fig.add_subplot(gs[0, 0])
     for name, data in methods_data.items():
         if len(data["err"]) > 0:
+            # Assuming dz_values corresponds to iterations (smaller dz = more iterations)
             ax1.loglog(dz_values, data["err"], data["style"], label=name)
+
     ax1.set_xlabel(r"Step Size $\Delta z$ (m)")
     ax1.set_ylabel("Relative Error")
-    ax1.set_title("Convergence Analysis")
+    ax1.set_title("Convergence: Accuracy vs Step Size")
+    # Invert X axis so smaller steps (more computation) are on the right
     ax1.invert_xaxis()
     ax1.grid(True, alpha=0.3, which="both")
     ax1.legend()
 
-    # 2. Phase
+    # --- 2. Efficiency (Error vs Time) ---
     ax2 = fig.add_subplot(gs[0, 1])
-    ax2.plot(x_axis, np.angle(psi_gt), "k-", lw=2, label="GT")
-    for name, wave in final_waves.items():
-        ax2.plot(x_axis, np.angle(wave), "--", label=name)
-    ax2.set_title("Exit Wave Phase")
-    ax2.set_xlabel("X (um)")
+    for name, data in methods_data.items():
+        if len(data["err"]) > 0:
+            # Check if time data exists in the dictionary
+            if "times" in data and len(data["times"]) == len(data["err"]):
+                ax2.loglog(data["times"], data["err"], data["style"], label=name)
+            else:
+                print(f"Warning: No timing data found for {name}, skipping time plot.")
+
+    ax2.set_xlabel("Execution Time (s)")
+    ax2.set_ylabel("Relative Error")
+    ax2.set_title("Efficiency: Accuracy vs Time")
+    ax2.grid(True, alpha=0.3, which="both")
     ax2.legend()
-    ax2.grid(alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f"{test_case_name}_3_metrics.png"), dpi=150)
+    plt.savefig(
+        os.path.join(output_dir, f"{test_case_name}_3_convergence.png"), dpi=150
+    )
     plt.close(fig)

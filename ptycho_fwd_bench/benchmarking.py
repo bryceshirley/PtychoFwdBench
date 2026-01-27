@@ -134,8 +134,10 @@ def run_benchmark_loop(
         save_idx += len(step_counts)
 
     # Initialize containers
-    # Structure: methods[name] = {'err': [], 'time': [], 'style': ...}
-    methods = {s["name"]: {"err": [], "time": [], "style": "o--"} for s in solvers_list}
+    # Structure: methods[name] = {'err': [], 'times': [], 'style': ...}
+    methods = {
+        s["name"]: {"err": [], "times": [], "style": "o--"} for s in solvers_list
+    }
     final_waves = {}
     beam_hists = {}  # To store beam propagation for the 'save_idx' run
 
@@ -186,7 +188,7 @@ def run_benchmark_loop(
             # Metrics
             err = np.linalg.norm(psi_out - psi_gt) / np.linalg.norm(psi_gt)
             methods[name]["err"].append(err)
-            methods[name]["time"].append(t_run)
+            methods[name]["times"].append(t_run)
 
             logging.info(f"  {name:<20}: Time={t_run:.4f}s, Error={err:.2e}")
 
@@ -203,29 +205,22 @@ def run_benchmark_loop(
     width_um = sim_params["physical_width"] * um_scale
     thick_um = sim_params["sample_thickness"] * um_scale
 
-    # 1. Exit Waves
-    plotters.plot_setup_and_exit_wave(
-        n_map_fine,
-        n_map_coarse,
-        psi_gt,
-        final_waves,
-        width_um,
-        thick_um,
-        cfg["experiment"]["name"],
-        out_dir,
-        sim_params["n_pad"],
+    # 1. Exit Waves (Amplitude & Phase)
+    plotters.plot_exit_wave_comparison(
+        psi_gt=psi_gt,
+        final_waves=final_waves,
+        physical_width_um=width_um,
+        test_case_name=cfg["experiment"]["name"],
+        output_dir=out_dir,
     )
 
-    # 2. Convergence Metrics
+    # 2. Convergence Metrics (Accuracy vs Steps & Time)
     dz_values = [sim_params["sample_thickness"] / n for n in step_counts]
-    plotters.plot_metrics_and_phase(
-        dz_values,
-        methods,
-        psi_gt,
-        final_waves,
-        width_um,
-        out_dir,
-        cfg["experiment"]["name"],
+    plotters.plot_convergence_metrics(
+        dz_values=dz_values,
+        methods_data=methods,
+        output_dir=out_dir,
+        test_case_name=cfg["experiment"]["name"],
     )
 
     # 3. Beam Propagation
