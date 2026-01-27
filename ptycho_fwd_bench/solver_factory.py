@@ -46,6 +46,11 @@ def create_solver(
             **common_args,
             pade_order=solver_params.get("pade_order", 8),
             max_iter=solver_params.get("max_iter", 4),
+            envelope=solver_params.get("envelope", False),
+            mode=solver_params.get("mode", "spectral"),
+            transform_type=solver_params.get("transform_type", "DST"),
+            solver_type=solver_params.get("solver_type", "bicgstab"),
+            preconditioner=solver_params.get("preconditioner", "split_step"),
         )
 
     elif s_type in ["MULTISLICE", "MS"]:

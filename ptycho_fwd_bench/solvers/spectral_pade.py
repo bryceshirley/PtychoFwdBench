@@ -2,6 +2,11 @@ import numpy as np
 from .base import OpticalWaveSolver
 from .utils import apply_spectral_kernel, get_spectral_coords
 from ptycho_fwd_bench.sssp.pade import pade_coefficients
+from scipy.sparse.linalg import bicgstab, LinearOperator, gmres
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SpectralPadeSolver(OpticalWaveSolver):
@@ -30,6 +35,14 @@ class SpectralPadeSolver(OpticalWaveSolver):
         Maximum iterations for Richardson solver.
     store_beam : bool, optional
         Whether to store beam history.
+    envelope : bool, optional
+        Whether to include envelope in Pade coefficients.
+    mode : str, optional
+        Mode for spectral coordinates ('spectral', 'fd2', 'fd4', 'pseudo').
+    preconditioner : str, optional
+        Type of preconditioner to use ('split_step', 'shifted_mean', 'additive').
+    solver_type : str, optional
+        Type of iterative solver ('bicgstab', 'gmres').
     """
 
     def __init__(
@@ -42,21 +55,32 @@ class SpectralPadeSolver(OpticalWaveSolver):
         probe_focus: float = 0,
         pade_order: int = 4,
         transform_type: str = "DST",
-        max_iter: int = 4,
+        max_iter: int = 2,
         store_beam: bool = False,
+        envelope: bool = False,
+        mode: str = "spectral",
+        preconditioner: str = "split_step",
+        solver_type: str = "bicgstab",
     ):
         super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
         self.pade_order = pade_order
         self.max_iter = max_iter
         self.transform_type = transform_type
+        self.preconditioner = preconditioner
+        self.solver_type = solver_type
 
         # Pade Coeffs
         hk0 = self.dz * self.k0
-        self.b_coeffs_raw, self.d_coeffs = pade_coefficients(hk0, self.pade_order)
+        self.b_coeffs_raw, self.d_coeffs = pade_coefficients(
+            hk0, self.pade_order, envelope=envelope
+        )
 
         # Spectral Operator Lambda = -kx^2
-        kx = get_spectral_coords(self.nx, self.dx, self.transform_type)
+        kx = get_spectral_coords(self.nx, self.dx, self.transform_type, mode=mode)
         self.Lambda = -(kx**2)
+
+        # Initialize stats container
+        self._solver_stats = {"iters": [], "residuals": []}
 
     def _apply_diffraction(self, psi: np.ndarray, kernel: np.ndarray) -> np.ndarray:
         return apply_spectral_kernel(psi, kernel, self.transform_type)
@@ -69,6 +93,9 @@ class SpectralPadeSolver(OpticalWaveSolver):
         Returns:
             self: Updated solver with final wavefront
         """
+        # Reset stats
+        self._solver_stats = {"iters": [], "residuals": []}
+
         # Base class handles creation or validation
         psi = self.initialize_wavefront(psi_init)
 
@@ -96,59 +123,147 @@ class SpectralPadeSolver(OpticalWaveSolver):
                 self.beam_history[:, i + 1] = psi
 
         self.psi_final = psi
+
+        # Log aggregated statistics
+        if self._solver_stats["iters"]:
+            avg_iter = np.mean(self._solver_stats["iters"])
+            avg_resid = np.mean(self._solver_stats["residuals"])
+            logger.info(
+                f"Spectral Pade [{self.solver_type}|{self.preconditioner}]: "
+                f"Avg Iters: {avg_iter:.2f} | Avg Rel. Residual: {avg_resid:.2e}"
+            )
+
         return self
+
+    def _get_preconditioner_op(
+        self, b_j: complex, b_diff: complex, N_vals: np.ndarray
+    ) -> LinearOperator:
+        """Constructs the LinearOperator for M^-1 based on self.preconditioner"""
+
+        M_L_kernel = 1.0 + b_diff * self.Lambda
+        M_N_vals = 1.0 + b_j * N_vals
+        n_size = self.nx
+
+        if self.preconditioner == "split_step":
+            # M^-1 ~ (1+bN)^-1 (1+bL)^-1
+
+            # Inverse L (Spectral)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_L_kern = 1.0 / M_L_kernel
+                inv_L_kern[np.isclose(M_L_kernel, 0)] = 0.0
+
+            # Inverse N (Spatial)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_N_vals = 1.0 / M_N_vals
+                inv_N_vals[np.isclose(M_N_vals, 0)] = 0.0
+
+            def matvec_M_inv(x_vec):
+                x_grid = x_vec.reshape(n_size)
+                # Apply L^-1 then N^-1
+                temp = self._apply_diffraction(x_grid, inv_L_kern)
+                out = temp * inv_N_vals
+                return out.ravel()
+
+        elif self.preconditioner == "shifted_mean":
+            # M^-1 ~ (1 + bL + b*mean(N))^-1
+            N_mean = np.mean(N_vals)
+            shifted_kernel = 1.0 + b_diff * self.Lambda + b_j * N_mean
+
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_shifted_kernel = 1.0 / shifted_kernel
+                inv_shifted_kernel[np.isclose(shifted_kernel, 0)] = 0.0
+
+            def matvec_M_inv(x_vec):
+                x_grid = x_vec.reshape(n_size)
+                out = self._apply_diffraction(x_grid, inv_shifted_kernel)
+                return out.ravel()
+
+        elif self.preconditioner == "additive":
+            # M^-1 ~ (1+bN)^-1 + (1+bL)^-1 - I
+
+            # Inverse L
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_L_kern = 1.0 / M_L_kernel
+                inv_L_kern[np.isclose(M_L_kernel, 0)] = 0.0
+
+            # Inverse N
+            with np.errstate(divide="ignore", invalid="ignore"):
+                inv_N_vals = 1.0 / M_N_vals
+                inv_N_vals[np.isclose(M_N_vals, 0)] = 0.0
+
+            def matvec_M_inv(x_vec):
+                x_grid = x_vec.reshape(n_size)
+                term1 = x_grid * inv_N_vals
+                term2 = self._apply_diffraction(x_grid, inv_L_kern)
+                out = term1 + term2 - x_grid
+                return out.ravel()
+
+        else:
+            raise ValueError(f"Unknown preconditioner: {self.preconditioner}")
+
+        return LinearOperator((n_size, n_size), matvec=matvec_M_inv, dtype=complex)
 
     def _solve_pade_term(
         self, psi: np.ndarray, b_j: complex, N_vals: np.ndarray
     ) -> np.ndarray:
-        """
-        Solves (1 + b_j * X) w = psi using Preconditioned Richardson Iteration.
-        where X = L_scaled + N, L_scaled = (1/k0^2) * L
-
-        Parameters:
-        ----------
-        psi : np.ndarray
-            Input wavefront.
-        b_j : complex
-            Pade coefficient.
-        N_vals : np.ndarray
-            Refractive index squared deviation values.
-        Returns:
-        ---------
-        w : np.ndarray
-            Solution wavefront.
-        """
-        # Preconditioner M = (1 + b_j/k0^2 * L)(1 + b_j * N)
+        # 1. Setup Exact Operator A (Same for all preconditioners)
         b_diff = b_j / self.k0sq
-        M_L_kernel = 1.0 + b_diff * self.Lambda
-        M_N_vals = 1.0 + b_j * N_vals
+        n_size = self.nx
 
-        # Split-Step Preconditioned Initial Guess w0 = M^-1 psi
-        with np.errstate(divide="ignore", invalid="ignore"):
-            inv_M_L = 1.0 / M_L_kernel
-            inv_M_L[np.isclose(M_L_kernel, 0)] = 0.0
-        w = (self._apply_diffraction(psi, inv_M_L)) / M_N_vals
+        def matvec_A(x_vec):
+            x_grid = x_vec.reshape(n_size)
+            # A = I + bL + bN
+            term_L = b_diff * self._apply_diffraction(x_grid, self.Lambda)
+            term_N = b_j * N_vals * x_grid
+            return (x_grid + term_L + term_N).ravel()
 
-        # Richardson Iteration
-        for _ in range(self.max_iter):
-            # A. Compute A * w = (1 + b L_scaled + b N) w
-            # L term
-            term_L = b_diff * self._apply_diffraction(w, self.Lambda)
+        A_op = LinearOperator((n_size, n_size), matvec=matvec_A, dtype=complex)
 
-            # N term
-            term_N = b_j * N_vals * w
+        # 2. Get Preconditioner Operator
+        M_op = self._get_preconditioner_op(b_j, b_diff, N_vals)
 
-            # A_w
-            A_w = w + term_L + term_N
+        # 3. Initial Guess (Preconditioned b)
+        b_vec = psi.ravel()
+        x0 = M_op.matvec(b_vec)
 
-            # Residual and Correction
-            residual = psi - A_w
+        # 4. Iteration Callback
+        iter_count = 0
 
-            # C. Apply Preconditioner M^-1 to residual
-            correction_L = self._apply_diffraction(residual, inv_M_L)
-            correction = correction_L / M_N_vals
+        def callback(xk):
+            nonlocal iter_count
+            iter_count += 1
 
-            # Update
-            w += correction
+        # 5. Run Solver
+        if self.solver_type == "bicgstab":
+            w_flat, info = bicgstab(
+                A_op,
+                b_vec,
+                x0=x0,
+                M=M_op,
+                rtol=1e-5,
+                maxiter=self.max_iter,
+                callback=callback,
+            )
+        elif self.solver_type == "gmres":
+            # GMRES often requires a restart parameter, implicit here
+            w_flat, info = gmres(
+                A_op,
+                b_vec,
+                x0=x0,
+                M=M_op,
+                rtol=1e-5,
+                maxiter=self.max_iter,
+                callback=callback,
+            )
+        else:
+            raise ValueError(f"Unknown solver type: {self.solver_type}")
 
-        return w
+        # 6. Stats
+        # Calculate residual manually to verify
+        final_residual_vec = b_vec - A_op.matvec(w_flat)
+        final_rel_resid = np.linalg.norm(final_residual_vec) / np.linalg.norm(b_vec)
+
+        self._solver_stats["iters"].append(iter_count)
+        self._solver_stats["residuals"].append(final_rel_resid)
+
+        return w_flat.reshape(self.nx)

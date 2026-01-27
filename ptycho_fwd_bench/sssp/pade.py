@@ -100,7 +100,7 @@ def shiftpoly(p: _ArrayLike, xo: float):
     return ps
 
 
-def tay_expsqrt(hk0: float, N: int):
+def tay_expsqrt(hk0: float, N: int, envelope: bool = True):
     # derivatives for Taylor coeffs
     cTaylor = np.zeros(N, dtype=complex)
     cTaylor[0] = 1
@@ -118,18 +118,19 @@ def tay_expsqrt(hk0: float, N: int):
 
         vp = vc.copy()
 
-    cTaylor *= np.exp(1j * hk0)
+    if not envelope:
+        cTaylor *= np.exp(1j * hk0)
     return cTaylor
 
 
-def pade_expsqrt(hk0: float, n: int, m: int):
-    cTaylor = tay_expsqrt(hk0, n + m + 1)
+def pade_expsqrt(hk0: float, n: int, m: int, envelope: bool = True):
+    cTaylor = tay_expsqrt(hk0, n + m + 1, envelope)
     p, q = pade0fromT(cTaylor, 0, n, m)
     return p, q
 
 
-def pade_coefficients(hk0: float, nP: int):
-    pP, qP = pade_expsqrt(hk0, nP, nP)
+def pade_coefficients(hk0: float, nP: int, envelope: bool = True):
+    pP, qP = pade_expsqrt(hk0, nP, nP, envelope)
 
     cP = -1 / np.roots(pP)
     bP = -1 / np.roots(qP)
