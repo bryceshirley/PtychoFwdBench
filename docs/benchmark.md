@@ -4,9 +4,9 @@ This guide details how to configure and run benchmarks for comparing the **PyRAM
 
 ## Table of Contents
 
-1. [Quick Start](quick_start.md)
-2. [Configuration Reference](configuration_reference.md)
-3. [Outputs](outputs.md)
+1. [Quick Start](#quick-start)
+2. [Configuration Reference](#configuration-reference)
+3. [Outputs](#outputs)
 
 ---
 
@@ -14,12 +14,20 @@ This guide details how to configure and run benchmarks for comparing the **PyRAM
 
 The benchmark script provides a Command Line Interface (CLI). Execute a benchmark by supplying the path to your YAML configuration file.
 
+**Option 1: Run with uv (Recommended)** uv automatically handles the environment
+
+```bash
+# Or run using uv
+uv run python run_benchmarks.py configs/blobs_default.yml
+```
+
+**Option 2: Run directly with Python** Manually activate the virtual environment first.
+
 ```bash
 # Run with standard python
+source .venv/bin/activate # Activate virtual environment Linux/Mac
+# .venv\Scripts\activate  # Activate virtual environment Windows
 python run_benchmarks.py configs/blobs_default.yml
-
-# Or run using uv (recommended for dependency management)
-uv run run_benchmarks.py configs/blobs_default.yml
 ```
 
 ---
