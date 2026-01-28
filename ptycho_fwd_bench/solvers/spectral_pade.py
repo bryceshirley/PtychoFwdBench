@@ -63,7 +63,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         mode: str = "spectral",
         preconditioner: str = "split_step",
         solver_type: str = "bicgstab",
-        solver_stats: bool = False
+        solver_stats: bool = False,
     ):
         super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
         self.pade_order = pade_order
@@ -85,9 +85,6 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         # Initialize stats container
         self._solver_stats = {"iters": [], "residuals": []}
-
-    def _apply_diffraction(self, psi: np.ndarray, kernel: np.ndarray) -> np.ndarray:
-        return apply_spectral_kernel(psi, kernel, self.transform_type)
 
     def run(self, psi_init: np.ndarray = None) -> "SpectralPadeSolver":
         """
@@ -142,7 +139,14 @@ class SpectralPadeSolver(OpticalWaveSolver):
     def _get_preconditioner_op(
         self, b_j: complex, b_diff: complex, N_vals: np.ndarray
     ) -> LinearOperator:
-        """Constructs the LinearOperator for M^-1 based on self.preconditioner"""
+        """Constructs the LinearOperator for M^-1 based on self.preconditioner.
+        Parameters:
+            b_j: Pade coefficient for the j-th term.
+            b_diff: Scaled diffraction coefficient.
+            N_vals: Refractive term values (np.ndarray)
+        Returns:
+            LinearOperator representing M^-1 Preconditioner.
+        """
 
         M_L_kernel = 1.0 + b_diff * self.Lambda
         M_N_vals = 1.0 + b_j * N_vals
@@ -207,10 +211,28 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         return LinearOperator((n_size, n_size), matvec=matvec_M_inv, dtype=complex)
 
+    def _apply_diffraction(self, psi: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+        """
+        Apply the spectral diffraction operator using the given kernel.
+        L = F^-1 [kernel * F[psi]]
+        Parameters:
+            psi: Input wavefront (np.ndarray)
+            kernel: Spectral kernel to apply (np.ndarray)
+        Returns:
+            Resulting wavefront after applying diffraction (np.ndarray)
+        """
+        return apply_spectral_kernel(psi, kernel, self.transform_type)
+
     def _get_direct_op(self, b_j, b_diff, N_vals):
         """
         Construct the Linear Operator for the full direct step
         A = I + b_diff L + b_j N
+        Parameters:
+            b_j: Pade coefficient for the j-th term.
+            b_diff: Scaled diffraction coefficient.
+            N_vals: Refractive term values (np.ndarray)
+        Returns:
+            LinearOperator representing the direct operator A.
         """
         n_size = self.nx
 
@@ -222,21 +244,26 @@ class SpectralPadeSolver(OpticalWaveSolver):
             return (x_grid + term_L + term_N).ravel()
 
         return LinearOperator((n_size, n_size), matvec=matvec_A, dtype=complex)
-    
+
     def _solve_pade_term(
         self, psi: np.ndarray, b_j: complex, N_vals: np.ndarray
     ) -> np.ndarray:
-        # 1. Setup Exact Operator A (Same for all preconditioners)
-        b_diff = b_j / self.k0sq
-        
-
-        # 2. Get Preconditioner Operator and the Full Direct Operator
+        """
+        Solve for the j-th Pade term w_j using an iterative solver.
+        Parameters:
+            psi: Current wavefront (np.ndarray)
+            b_j: Pade coefficient for the j-th term.
+            N_vals: Refractive term values (np.ndarray)
+        Returns:
+            w_j: Solution for the j-th Pade term (np.ndarray)
+        """
+        # 1. Get Preconditioner Operator and the Full Direct Operator
         #     This is a implementation isn't always optimal as the inverse
         #     spectral operator in M can cancel out one in A, leading to
         #     two less fourier transforms. We admit that case for now.
-        A_op = self._get_direct_op(b_j, b_diff, N_val)
+        b_diff = b_j / self.k0sq
+        A_op = self._get_direct_op(b_j, b_diff, N_vals)
         M_op = self._get_preconditioner_op(b_j, b_diff, N_vals)
-        
 
         # 3. Initial Guess (Preconditioned b)
         b_vec = psi.ravel()
@@ -250,13 +277,14 @@ class SpectralPadeSolver(OpticalWaveSolver):
             iter_count += 1
 
         # 5. Run Solver
+        rtol = 1e-8  # Tight tolerance for inner solve
         if self.solver_type == "bicgstab":
             w_flat, info = bicgstab(
                 A_op,
                 b_vec,
                 x0=x0,
                 M=M_op,
-                rtol=1e-5,
+                rtol=rtol,
                 maxiter=self.max_iter,
                 callback=callback,
             )
@@ -266,7 +294,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
                 b_vec,
                 x0=x0,
                 M=M_op,
-                rtol=1e-5,
+                rtol=rtol,
                 maxiter=self.max_iter,
                 callback=callback,
             )
