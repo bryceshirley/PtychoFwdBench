@@ -141,7 +141,7 @@ def generate_gravel_phantom(
     """
     Generates a phantom with hard-edged, high-contrast scatterers.
 
-    Paremeters:
+    Parameters:
         nz (int): Number of pixels in the transverse direction (rows).
         nr (int): Number of pixels in the propagation direction (columns).
         n_background (float): The refractive index value.

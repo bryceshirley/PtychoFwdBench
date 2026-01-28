@@ -4,6 +4,10 @@ import numpy as np
 import os
 from typing import Dict, List
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def plot_fine_vs_coarse(
     n_map_fine: np.ndarray,
@@ -256,7 +260,9 @@ def plot_convergence_metrics(
             if "times" in data and len(data["times"]) == len(data["err"]):
                 ax2.loglog(data["times"], data["err"], data["style"], label=name)
             else:
-                print(f"Warning: No timing data found for {name}, skipping time plot.")
+                logger.warning(
+                    f"Warning: No timing data found for {name}, skipping time plot."
+                )
 
     ax2.set_xlabel("Execution Time (s)")
     ax2.set_ylabel("Relative Error")

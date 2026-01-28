@@ -48,7 +48,7 @@ def create_solver(
             max_iter=solver_params.get("max_iter", 4),
             envelope=solver_params.get("envelope", False),
             mode=solver_params.get("mode", "spectral"),
-            transform_type=solver_params.get("transform_type", "DST"),
+            transform_type=solver_params.get("transform_type", "FFT"),
             solver_type=solver_params.get("solver_type", "bicgstab"),
             preconditioner=solver_params.get("preconditioner", "split_step"),
         )
@@ -57,7 +57,7 @@ def create_solver(
         return MultisliceSolver(
             **common_args,
             symmetric=solver_params.get("symmetric", False),
-            transform_type=solver_params.get("transform_type", "DST"),
+            transform_type=solver_params.get("transform_type", "FFT"),
         )
 
     else:

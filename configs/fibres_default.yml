@@ -34,7 +34,7 @@ sample:
     waviness_um: 1.2
 
 solvers:
-  - name: "Pade (Order 8)" # Arbitary Name
+  - name: "Pade (Order 8)" # Arbitrary Name
     type: "PADE"
     solver_params:
       pade_order: 8

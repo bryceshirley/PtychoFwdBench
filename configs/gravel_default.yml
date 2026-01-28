@@ -25,7 +25,7 @@ sample:
 
     save_file: "./data/gravel_gt_ref.npz"
 
-  # Sample Generator Paramters
+  # Sample Generator Parameters
   params:
     n_background: 1.0
     delta_n: 0.2
@@ -33,7 +33,7 @@ sample:
     n_blobs: 400
 
 solvers:
-  - name: "Pade (Order 8)" # Arbitary Name
+  - name: "Pade (Order 8)" # Arbitrary Name
     type: "PADE"
     solver_params:
       pade_order: 8

@@ -1,4 +1,3 @@
-import yaml
 import numpy as np
 import logging
 from time import process_time
@@ -16,8 +15,6 @@ from ptycho_fwd_bench.generators import (
 )
 from ptycho_fwd_bench.solver_factory import create_solver
 from ptycho_fwd_bench.utils import (
-    setup_output_directory,
-    setup_logging,
     save_ground_truth,
     load_ground_truth,
 )
@@ -241,16 +238,11 @@ def run_benchmark_loop(
 # ==========================================
 
 
-def run_full_benchmark(config_path: str):
-    """Orchestrates the full benchmark process."""
-
-    # 1. Load & Setup
-    with open(config_path, "r") as f:
-        cfg = yaml.safe_load(f)
-    out_dir = setup_output_directory(config_path, cfg["experiment"]["name"])
-    setup_logging(out_dir)
-
-    logging.info(f"Loaded Config: {config_path}")
+def run_full_benchmark(cfg: dict, out_dir: str):
+    """Orchestrates the full benchmark process.
+    cfg: Loaded YAML configuration dictionary
+    out_dir: Output directory for results
+    """
     logging.info(f"Description: {cfg['experiment'].get('description', '')}")
 
     # 2. Parse & Validate

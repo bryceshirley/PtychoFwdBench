@@ -5,11 +5,11 @@ experiment:
 physics:
   wavelength_um: 0.635
   probe_dia_um: 10.0
-  probe_focus_um: -10.0
+  probe_focus_um: -5.0
 
 grid:
-  n_physical: 1024
-  n_padding: 256
+  n_physical: 2048
+  n_padding: 512
   physical_width_um: 150.0
 
 sample:
@@ -27,12 +27,12 @@ sample:
 
     load_file: "./data/blobs_gt_ref.npz"
 
-  # Sample Generator Paramters
+  # Sample Generator Parameters
   params:
     n_background: 1.0
     delta_n: 0.01         # Scattering strength
     beta_n: 0.005          # Absorption
-    n_blobs: 300
+    n_blobs: 50
 
 # Benchmarking List
 # List as many solvers as desired for comparison
@@ -61,14 +61,14 @@ solvers:
       solver_type: "bicgstab"
       preconditioner: "split_step"
 
-  - name: "Spectral Pade Shifted Mean Precon (Order 4)"
+  - name: "Spectral Pade Symmetric Shifted Precon (Order 4)"
     type: "SPECTRAL_PADE"
     solver_params:
       pade_order: 4
       max_iter: 4
       transform_type: "FFT"
       solver_type: "bicgstab"
-      preconditioner: "shifted_mean"
+      preconditioner: "symmetric_shifted"
 
   - name: "Multislice (DST, Symmetric)"
     type: "MULTISLICE"
@@ -83,5 +83,5 @@ solvers:
       symmetric: false
 
 benchmark:
-  step_counts: [8, 16, 32, 64, 128, 256]
+  step_counts: [8, 16, 32, 64]
   save_beam_idx: 0

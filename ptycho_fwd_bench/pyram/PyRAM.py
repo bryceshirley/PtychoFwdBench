@@ -103,7 +103,7 @@ class PyRAM:
         nr = int(numpy.round(self._rmax / self._dr)) - 1
 
         for rn in range(nr):
-            self.updat()
+            self.update()
 
             solve(
                 self.u,
@@ -438,7 +438,7 @@ class PyRAM:
             self.alpw[i] = numpy.sqrt(self.cw[i] / self._c0)
             self.alpb[i] = numpy.sqrt(self.rhob[i] * self.cb[i] / self._c0)
 
-    def updat(self):
+    def update(self):
         """
         Matrix updates
         """

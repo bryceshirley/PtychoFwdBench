@@ -14,6 +14,10 @@ import numpy
 from pyram.PyRAMmp import PyRAMmp
 from pyram.PyRAM import PyRAM
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class TestPyRAMmp(unittest.TestCase):
     """
@@ -90,9 +94,8 @@ class TestPyRAMmp(unittest.TestCase):
         freqs_rep = numpy.tile(self.freqs, self.nrep)
         num_runs = len(freqs_rep)
 
-        print(
-            num_runs,
-            "PyRAM runs set up, running...",
+        logger.info(
+            f"{num_runs} PyRAM runs set up, running...",
         )
 
         runs = []
@@ -136,9 +139,9 @@ class TestPyRAMmp(unittest.TestCase):
                 "Transmission Loss values are not equal",
             )
 
-        print("Finished.\n")
+        logger.info("Finished.\n")
         speed_fact = 100 * (self.proc_time / nproc) / self.elap_time
-        print("{0:.1f} % of expected speed up achieved".format(speed_fact))
+        logger.info("{0:.1f} % of expected speed up achieved".format(speed_fact))
 
 
 if __name__ == "__main__":

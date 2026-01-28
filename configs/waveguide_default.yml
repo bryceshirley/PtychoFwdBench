@@ -31,31 +31,42 @@ sample:
 
   # Sample Generator Parameters
   params:
-    delta_n: 0.01         # Scattering strength
-    beta_n: 0.001        # Absorption
+    delta_n: 0.1         # Scattering strength
+    beta_n: 0.01        # Absorption
     width_um: 8.0
     n_background: 1.0
 
 # Benchmarking List
 solvers:
-  - name: "Pade (Order 4)"
+  - name: "Pade (Order 8)"
     type: "PADE"
     solver_params:
-      pade_order: 4
+      pade_order: 8
 
-  - name: "Spectral Pade (Order 4)"
+  - name: "Spectral Pade (Order 8, 1 Iter)"
     type: "SPECTRAL_PADE"
     solver_params:
-      pade_order: 4
-      max_iter: 4
+      pade_order: 8
+      max_iter: 2
       transform_type: "FFT"
+      solver_type: "bicgstab"
+      preconditioner: "split_step"
+
+  - name: "Spectral Pade (Order 8, 1 Iter, Symmetric Shifted)"
+    type: "SPECTRAL_PADE"
+    solver_params:
+      pade_order: 8
+      max_iter: 2
+      transform_type: "FFT"
+      solver_type: "bicgstab"
+      preconditioner: "symmetric_shifted"
 
   - name: "Multislice (FFT)"
     type: "MULTISLICE"
     solver_params:
       transform_type: "FFT"
-      symmetric: false
+      symmetric: False
 
 benchmark:
-  step_counts: [8, 16, 32, 64, 128, 256, 512, 1024]
+  step_counts: [4, 8, 16, 32, 64, 128, 256]
   save_beam_idx: 0
