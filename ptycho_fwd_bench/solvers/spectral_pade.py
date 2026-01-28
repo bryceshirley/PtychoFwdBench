@@ -265,18 +265,18 @@ class SpectralPadeSolver(OpticalWaveSolver):
         A_op = self._get_direct_op(b_j, b_diff, N_vals)
         M_op = self._get_preconditioner_op(b_j, b_diff, N_vals)
 
-        # 3. Initial Guess (Preconditioned b)
+        # 2. Initial Guess (Preconditioned b)
         b_vec = psi.ravel()
         x0 = M_op.matvec(b_vec)
 
-        # 4. Iteration Callback
+        # 3. Iteration Callback
         iter_count = 0
 
         def callback(xk):
             nonlocal iter_count
             iter_count += 1
 
-        # 5. Run Solver
+        # 4. Run Solver
         rtol = 1e-8  # Tight tolerance for inner solve
         if self.solver_type == "bicgstab":
             w_flat, info = bicgstab(
@@ -301,7 +301,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         else:
             raise ValueError(f"Unknown solver type: {self.solver_type}")
 
-        # 6. Stats
+        # 5. Stats
         # Calculate residual manually to verify
         if self.solver_stats:
             final_residual_vec = b_vec - A_op.matvec(w_flat)
