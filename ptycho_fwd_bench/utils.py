@@ -5,6 +5,27 @@ from datetime import datetime
 import subprocess
 from typing import Optional, Tuple
 import numpy as np
+import yaml
+
+
+def parse_config(config_path: str) -> dict:
+    """
+    Parse the YAML configuration file and set up output directory and logging.
+
+    Parameters:
+    - config_path: Path to the YAML configuration file.
+
+    Returns:
+    - cfg: Parsed configuration dictionary.
+    - out_dir: Output directory path.
+    """
+    # 1. Load & Setup
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f)
+    out_dir = setup_output_directory(config_path, cfg["experiment"]["name"])
+    setup_logging(out_dir)
+    logging.info(f"Loaded Config: {config_path}")
+    return cfg, out_dir
 
 
 def get_git_revision_hash() -> str:

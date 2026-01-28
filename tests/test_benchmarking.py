@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import ptycho_fwd_bench.benchmarking as benchmarking
@@ -177,22 +176,15 @@ class TestBenchmarkLoop:
 
 
 class TestFullBenchmarkOrchestrator:
-    @patch(
-        "builtins.open",
-        new_callable=mock.mock_open,
-        read_data="experiment:\n  name: TEST",
-    )
-    @patch("ptycho_fwd_bench.benchmarking.yaml.safe_load")
-    @patch("ptycho_fwd_bench.benchmarking.setup_output_directory")
-    @patch("ptycho_fwd_bench.benchmarking.setup_logging")
+    # We no longer need to patch builtins.open or yaml.safe_load here
+    # because run_full_benchmark now takes the dict directly.
+
     @patch("ptycho_fwd_bench.benchmarking.parse_simulation_parameters")
     @patch("ptycho_fwd_bench.benchmarking.validate_sampling_conditions")
     @patch("ptycho_fwd_bench.benchmarking.generate_simulation_inputs")
     @patch("ptycho_fwd_bench.benchmarking.compute_ground_truth")
     @patch("ptycho_fwd_bench.benchmarking.run_benchmark_loop")
-    @patch(
-        "ptycho_fwd_bench.benchmarking.save_ground_truth"
-    )  # Optional, mocked just in case
+    @patch("ptycho_fwd_bench.benchmarking.save_ground_truth")
     def test_run_full_benchmark_compute_mode(
         self,
         mock_save,
@@ -201,41 +193,29 @@ class TestFullBenchmarkOrchestrator:
         mock_gen,
         mock_valid,
         mock_parse,
-        mock_log,
-        mock_dir,
-        mock_yaml,
-        mock_file,
         mock_config,
         mock_sim_params,
     ):
         """Test the full flow where Ground Truth is COMPUTED."""
-
         # Setup
-        mock_yaml.return_value = mock_config
         mock_parse.return_value = mock_sim_params
-        mock_dir.return_value = "/tmp/out"
-
         mock_gen.return_value = ("n_map", "psi_0")
         mock_compute.return_value = ("psi_gt", "beam_gt")
+        out_dir = "/tmp/out"
 
-        # Execute
-        benchmarking.run_full_benchmark("dummy_config.yml")
+        # Execute - Now passing dict and path directly
+        benchmarking.run_full_benchmark(mock_config, out_dir)
 
         # Assertions
-        mock_gen.assert_called_once()  # Should generate inputs
-        mock_compute.assert_called_once()  # Should compute GT
-        mock_loop.assert_called_once()  # Should run loop
-        mock_save.assert_not_called()  # Config didn't have save_path set in mock_config fixture
+        mock_gen.assert_called_once()
+        mock_compute.assert_called_once()
+        mock_loop.assert_called_once()
 
-    @patch("builtins.open", new_callable=mock.mock_open, read_data="experiment: TEST")
-    @patch("ptycho_fwd_bench.benchmarking.yaml.safe_load")
-    @patch("ptycho_fwd_bench.benchmarking.setup_output_directory")
-    @patch("ptycho_fwd_bench.benchmarking.setup_logging")
     @patch("ptycho_fwd_bench.benchmarking.parse_simulation_parameters")
     @patch("ptycho_fwd_bench.benchmarking.validate_sampling_conditions")
-    @patch("ptycho_fwd_bench.benchmarking.load_ground_truth")  # <-- Key Mock
+    @patch("ptycho_fwd_bench.benchmarking.load_ground_truth")
     @patch("ptycho_fwd_bench.benchmarking.run_benchmark_loop")
-    @patch("ptycho_fwd_bench.benchmarking.compute_ground_truth")  # Should NOT be called
+    @patch("ptycho_fwd_bench.benchmarking.compute_ground_truth")
     def test_run_full_benchmark_load_mode(
         self,
         mock_compute,
@@ -243,29 +223,23 @@ class TestFullBenchmarkOrchestrator:
         mock_load,
         mock_valid,
         mock_parse,
-        mock_log,
-        mock_dir,
-        mock_yaml,
-        mock_file,
         mock_config,
         mock_sim_params,
     ):
         """Test the full flow where Ground Truth is LOADED."""
-
         # Modify config to have load_file
         mock_config["sample"]["ground_truth"]["load_file"] = "existing_gt.npz"
-        mock_yaml.return_value = mock_config
         mock_parse.return_value = mock_sim_params
+        out_dir = "/tmp/out"
 
         # Mock Load Return
-        # Ensure n_map shape matches sim_params['n_total'] (100) to avoid warning
         n_map_loaded = np.zeros((100, 100))
         mock_load.return_value = (n_map_loaded, "psi_0", "psi_gt", "beam_gt")
 
         # Execute
-        benchmarking.run_full_benchmark("dummy_config.yml")
+        benchmarking.run_full_benchmark(mock_config, out_dir)
 
         # Assertions
         mock_load.assert_called_with("existing_gt.npz")
-        mock_compute.assert_not_called()  # Crucial check
+        mock_compute.assert_not_called()
         mock_loop.assert_called_once()

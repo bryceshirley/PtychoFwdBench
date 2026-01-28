@@ -4,13 +4,39 @@ import subprocess
 import numpy as np
 import pytest
 from unittest import mock
+from unittest.mock import patch, mock_open
 from ptycho_fwd_bench.utils import (
     get_git_revision_hash,
     setup_output_directory,
     setup_logging,
     save_ground_truth,
     load_ground_truth,
+    parse_config,
 )
+
+
+@patch("ptycho_fwd_bench.utils.setup_logging")
+@patch("ptycho_fwd_bench.utils.setup_output_directory")
+@patch("ptycho_fwd_bench.utils.yaml.safe_load")
+def test_parse_config_logic(mock_yaml, mock_dir, mock_log):
+    """Test that parse_config correctly orchestrates setup."""
+
+    # Setup
+    fake_config_path = "config.yaml"
+    fake_cfg = {"experiment": {"name": "TestExp"}}
+    mock_yaml.return_value = fake_cfg
+    mock_dir.return_value = "outputs/TestExp_Date"
+
+    # We use mock_open to avoid actual file IO
+    with patch("builtins.open", mock_open(read_data="data")):
+        cfg, out_dir = parse_config(fake_config_path)
+
+    # Assertions
+    assert cfg == fake_cfg
+    assert out_dir == "outputs/TestExp_Date"
+    mock_dir.assert_called_once_with(fake_config_path, "TestExp")
+    mock_log.assert_called_once_with("outputs/TestExp_Date")
+
 
 # =============================================================================
 # 1. GIT HASH TESTS
