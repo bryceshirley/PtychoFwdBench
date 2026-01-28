@@ -43,6 +43,8 @@ class SpectralPadeSolver(OpticalWaveSolver):
         Type of preconditioner to use ('split_step', 'shifted_mean', 'additive').
     solver_type : str, optional
         Type of iterative solver ('bicgstab', 'gmres').
+    solver_stats : bool, false
+        Optional logging of inner iterative solve iteration count and residual.
     """
 
     def __init__(
@@ -61,6 +63,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         mode: str = "spectral",
         preconditioner: str = "split_step",
         solver_type: str = "bicgstab",
+        solver_stats: bool = False
     ):
         super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
         self.pade_order = pade_order
@@ -68,6 +71,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         self.transform_type = transform_type
         self.preconditioner = preconditioner
         self.solver_type = solver_type
+        self.solve_stats = solver_stats
 
         # Pade Coeffs
         hk0 = self.dz * self.k0
@@ -125,7 +129,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         self.psi_final = psi
 
         # Log aggregated statistics
-        if self._solver_stats["iters"]:
+        if self.solver_stats and self._solver_stats["iters"]:
             avg_iter = np.mean(self._solver_stats["iters"])
             avg_resid = np.mean(self._solver_stats["residuals"])
             logger.info(
@@ -203,11 +207,11 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         return LinearOperator((n_size, n_size), matvec=matvec_M_inv, dtype=complex)
 
-    def _solve_pade_term(
-        self, psi: np.ndarray, b_j: complex, N_vals: np.ndarray
-    ) -> np.ndarray:
-        # 1. Setup Exact Operator A (Same for all preconditioners)
-        b_diff = b_j / self.k0sq
+    def _get_direct_op(self, b_j, b_diff, N_vals):
+        """
+        Construct the Linear Operator for the full direct step
+        A = I + b_diff L + b_j N
+        """
         n_size = self.nx
 
         def matvec_A(x_vec):
@@ -217,10 +221,22 @@ class SpectralPadeSolver(OpticalWaveSolver):
             term_N = b_j * N_vals * x_grid
             return (x_grid + term_L + term_N).ravel()
 
-        A_op = LinearOperator((n_size, n_size), matvec=matvec_A, dtype=complex)
+        return LinearOperator((n_size, n_size), matvec=matvec_A, dtype=complex)
+    
+    def _solve_pade_term(
+        self, psi: np.ndarray, b_j: complex, N_vals: np.ndarray
+    ) -> np.ndarray:
+        # 1. Setup Exact Operator A (Same for all preconditioners)
+        b_diff = b_j / self.k0sq
+        
 
-        # 2. Get Preconditioner Operator
+        # 2. Get Preconditioner Operator and the Full Direct Operator
+        #     This is a implementation isn't always optimal as the inverse
+        #     spectral operator in M can cancel out one in A, leading to
+        #     two less fourier transforms. We admit that case for now.
+        A_op = self._get_direct_op(b_j, b_diff, N_val)
         M_op = self._get_preconditioner_op(b_j, b_diff, N_vals)
+        
 
         # 3. Initial Guess (Preconditioned b)
         b_vec = psi.ravel()
@@ -245,7 +261,6 @@ class SpectralPadeSolver(OpticalWaveSolver):
                 callback=callback,
             )
         elif self.solver_type == "gmres":
-            # GMRES often requires a restart parameter, implicit here
             w_flat, info = gmres(
                 A_op,
                 b_vec,
@@ -260,10 +275,11 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         # 6. Stats
         # Calculate residual manually to verify
-        final_residual_vec = b_vec - A_op.matvec(w_flat)
-        final_rel_resid = np.linalg.norm(final_residual_vec) / np.linalg.norm(b_vec)
+        if self.solver_stats:
+            final_residual_vec = b_vec - A_op.matvec(w_flat)
+            final_rel_resid = np.linalg.norm(final_residual_vec) / np.linalg.norm(b_vec)
 
-        self._solver_stats["iters"].append(iter_count)
-        self._solver_stats["residuals"].append(final_rel_resid)
+            self._solver_stats["iters"].append(iter_count)
+            self._solver_stats["residuals"].append(final_rel_resid)
 
         return w_flat.reshape(self.nx)
