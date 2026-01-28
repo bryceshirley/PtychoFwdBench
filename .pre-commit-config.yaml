@@ -42,7 +42,7 @@ repos:
       # Run Pytest via uv (Runs ONLY on push)
       - id: pytest-check
         name: Run Project Tests (Pytest)
-        entry: uv run pytest tests/ -v
+        entry: uv run python -m  pytest tests/
         language: system
         pass_filenames: false
         always_run: true
