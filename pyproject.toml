@@ -44,5 +44,5 @@ dev = [
 ]
 
 [tool.ruff.lint]
-# T201 checks for print(), T203 checks for pprint()
-extend-select = ["T201", "T203"]
+# T201 checks for print(), T203 checks for pprint(), B = common bugs, I = import sorting
+extend-select = ["T201", "T203", "B", "I"]
