@@ -138,12 +138,15 @@ def plot_beam_propagation(
     # This ensures all plots share the exact same intensity scale.
     v_min = 0
     v_max = np.max(np.abs(beam_gt)) * 1.1
+    # Phase limits
+    v_min_phase = -np.pi
+    v_max_phase = np.pi
 
     # 3. Iterate through each solver and plot against GT
     for name, beam_solver in beam_histories.items():
         # Create a figure with 2 rows: Top=GT, Bottom=Solver
-        fig = plt.figure(figsize=(12, 8), constrained_layout=True)
-        gs = fig.add_gridspec(2, 1)
+        fig = plt.figure(figsize=(12, 12), constrained_layout=True)
+        gs = fig.add_gridspec(2, 2)
 
         # --- Top: Ground Truth ---
         ax_gt = fig.add_subplot(gs[0, 0])
@@ -155,10 +158,24 @@ def plot_beam_propagation(
             vmin=v_min,
             vmax=v_max,
         )
-        ax_gt.set_title("Reference: Ground Truth (Fine Padé)")
+        ax_gt.set_title("Reference: Ground Truth Amplitude (Fine Padé)")
         ax_gt.set_ylabel("X (um)")
         ax_gt.set_xlabel("Z (um)")
         plt.colorbar(im_gt, ax=ax_gt, label="|u|")
+
+        ax_gt = fig.add_subplot(gs[0, 1])
+        im_gt = ax_gt.imshow(
+            np.angle(beam_gt),
+            extent=extent_map,
+            aspect="auto",
+            cmap="inferno",
+            vmin=v_min_phase,
+            vmax=v_max_phase,
+        )
+        ax_gt.set_title("Reference: Ground Truth Phase (Fine Padé)")
+        ax_gt.set_ylabel("X (um)")
+        ax_gt.set_xlabel("Z (um)")
+        plt.colorbar(im_gt, ax=ax_gt, label="Phase (rad)")
 
         # --- Bottom: Specific Solver ---
         ax_sol = fig.add_subplot(gs[1, 0])
@@ -170,10 +187,24 @@ def plot_beam_propagation(
             vmin=v_min,
             vmax=v_max,
         )
-        ax_sol.set_title(f"Solver: {name} (N={step_count_disp})")
+        ax_sol.set_title(f"Solver: {name} (N={step_count_disp}) Amplitude")
         ax_sol.set_ylabel("X (um)")
         ax_sol.set_xlabel("Z (um)")
         plt.colorbar(im_sol, ax=ax_sol, label="|u|")
+
+        ax_sol = fig.add_subplot(gs[1, 1])
+        im_sol = ax_sol.imshow(
+            np.angle(beam_solver),
+            extent=extent_map,
+            aspect="auto",
+            cmap="inferno",
+            vmin=v_min_phase,
+            vmax=v_max_phase,
+        )
+        ax_sol.set_title(f"Solver: {name} (N={step_count_disp}) Phase")
+        ax_sol.set_ylabel("X (um)")
+        ax_sol.set_xlabel("Z (um)")
+        plt.colorbar(im_sol, ax=ax_sol, label="Phase (rad)")
 
         # --- Save ---
         # Clean filename: remove spaces, parentheses, etc.

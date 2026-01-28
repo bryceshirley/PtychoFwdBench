@@ -1,7 +1,14 @@
 # .pre-commit-config.yaml
 repos:
+  # 1. UV Lock Check (Ensures lockfile is valid)
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.5.2
+    hooks:
+      - id: uv-lock
+
+  # 2. Ruff Linter and Formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.1  # Ruff version. Use the same version as in your pyproject.toml
+    rev: v0.9.1
     hooks:
       # Run the linter.
       - id: ruff
@@ -9,10 +16,41 @@ repos:
       # Run the formatter.
       - id: ruff-format
 
+  # Standard Hygiene: Common Pre-commit Hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+      - id: check-toml
       - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: debug-statements
+
+  # Standard Hygiene: Local Checks
+  - repo: local
+    hooks:
+      - id: check-todo
+        name: Check for TODO/FIXME comments in code
+        entry: '(TODO|FIXME)'
+        language: pygrep
+        types: [text]
+        exclude: ^\.pre-commit-config\.yaml$
+
+      # Run Pytest via uv (Runs ONLY on push)
+      - id: pytest-check
+        name: Run Project Tests (Pytest)
+        entry: uv run pytest tests/ -v
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+  # Spell Checking
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.6
+    hooks:
+      - id: codespell
+        args: [--ignore-words-list, "selfs"]

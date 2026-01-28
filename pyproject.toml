@@ -18,18 +18,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 
-# COMBINED DEPENDENCIES:
+# RUNTIME DEPENDENCIES
 dependencies = [
     "numpy>=1.25",
     "numba>=0.58",
     "scipy",
     "matplotlib",
     "pyyaml",
-    "ruff>=0.14.14",
-    "pytest>=8.4.2",
     "tqdm>=4.67.1",
-    "matplot2tikz>=0.4.2",
-    "pre-commit>=4.3.0",
 ]
 
 [build-system]
@@ -39,9 +35,14 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["ptycho_fwd_bench"]
 
+# DEV DEPENDENCIES
 [dependency-groups]
 dev = [
     "pre-commit>=4.3.0",
     "pytest>=8.4.2",
-    "ruff>=0.14.14",
+    "ruff>=0.9.1",
 ]
+
+[tool.ruff.lint]
+# T201 checks for print(), T203 checks for pprint()
+extend-select = ["T201", "T203"]
