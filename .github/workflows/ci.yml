@@ -31,9 +31,9 @@ jobs:
         # uvx will download and cache ruff if not already available
         run: |
           # Check for errors
-          uvx run ruff check .
+          uvx ruff check .
           # Check formatting
-          uvx run ruff format --check .
+          uvx ruff format --check .
 
       - name: Run Project Tests (Pytest)
         run: |
