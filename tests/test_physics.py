@@ -1,7 +1,9 @@
 import warnings
-import pytest
+from typing import Any, Dict
+
 import numpy as np
-from typing import Dict, Any
+import pytest
+
 from ptycho_fwd_bench.physics import (
     parse_simulation_parameters,
     validate_sampling_conditions,

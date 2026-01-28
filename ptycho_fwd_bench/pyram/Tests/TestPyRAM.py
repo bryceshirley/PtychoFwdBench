@@ -1,6 +1,7 @@
 """TestPyRAM class definition"""
 
 import unittest
+
 import numpy
 from pyram.PyRAM import PyRAM
 

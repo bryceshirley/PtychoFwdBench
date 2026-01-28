@@ -1,7 +1,8 @@
-import numpy as np
 import math
-from scipy.sparse import spdiags
+
+import numpy as np
 from numpy._typing import _ArrayLike
+from scipy.sparse import spdiags
 
 
 def pade0fromT(cTaylor: _ArrayLike, xo: float, n: int, m: int):

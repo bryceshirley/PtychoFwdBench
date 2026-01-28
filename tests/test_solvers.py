@@ -1,5 +1,6 @@
-import pytest
 import numpy as np
+import pytest
+
 from ptycho_fwd_bench.solver_factory import create_solver
 from ptycho_fwd_bench.solvers import FiniteDifferencePadeSolver, MultisliceSolver
 

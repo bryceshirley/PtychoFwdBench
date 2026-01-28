@@ -1,7 +1,8 @@
-import numpy as np
 import logging
 import warnings
-from typing import Dict, Any
+from typing import Any, Dict
+
+import numpy as np
 
 
 def parse_simulation_parameters(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -82,4 +83,4 @@ def validate_sampling_conditions(sim_params: Dict[str, Any]):
             f"exceeds grid limit ({max_angle_deg:.2f}°). Aliasing will occur!"
         )
         logging.warning(msg)
-        warnings.warn(msg)
+        warnings.warn(msg, stacklevel=2)

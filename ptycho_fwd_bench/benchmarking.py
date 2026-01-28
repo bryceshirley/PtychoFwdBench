@@ -1,29 +1,30 @@
-import numpy as np
 import logging
 from time import process_time
-from typing import Dict, Any, Tuple, Optional
+from typing import Any, Dict, Optional, Tuple
+
+import numpy as np
+
+import ptycho_fwd_bench.plotters as plotters
 
 # --- PyRAM Imports ---
 from ptycho_fwd_bench.generators import (
     generate_blob_phantom,
-    generate_gravel_phantom,
-    generate_waveguide_phantom,
     generate_branching_phantom,
     generate_fiber_bundle_phantom,
-    interpolate_to_coarse,
+    generate_gravel_phantom,
+    generate_waveguide_phantom,
     get_probe_field,
-)
-from ptycho_fwd_bench.solver_factory import create_solver
-from ptycho_fwd_bench.utils import (
-    save_ground_truth,
-    load_ground_truth,
+    interpolate_to_coarse,
 )
 from ptycho_fwd_bench.physics import (
     parse_simulation_parameters,
     validate_sampling_conditions,
 )
-import ptycho_fwd_bench.plotters as plotters
-
+from ptycho_fwd_bench.solver_factory import create_solver
+from ptycho_fwd_bench.utils import (
+    load_ground_truth,
+    save_ground_truth,
+)
 
 # --- Generator Map ---
 GENERATOR_MAP = {

@@ -2,7 +2,6 @@ import numpy as np
 from scipy.ndimage import gaussian_filter, zoom
 from scipy.special import j1, jn_zeros
 
-
 # =============================================================================
 # 1. PROBE GENERATOR
 # =============================================================================

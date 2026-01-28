@@ -1,6 +1,8 @@
-import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional
+
+import numpy as np
+
 from ptycho_fwd_bench.generators import get_probe_field
 
 

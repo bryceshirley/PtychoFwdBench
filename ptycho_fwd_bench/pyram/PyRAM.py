@@ -25,11 +25,13 @@ PyRAM also provides various conveniences, e.g. automatic calculation of range
 and depth steps (though these can be overridden using keyword arguments).
 """
 
-import numpy
 from time import process_time
+
+import numpy
+
 from .matrc import matrc
-from .solve import solve
 from .outpt import outpt
+from .solve import solve
 
 
 class PyRAM:

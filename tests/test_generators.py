@@ -1,13 +1,14 @@
-import pytest
 import numpy as np
+import pytest
+
 from ptycho_fwd_bench.generators import (
-    get_probe_field,
-    generate_empty_phantom,
     generate_blob_phantom,
+    generate_branching_phantom,
+    generate_empty_phantom,
+    generate_fiber_bundle_phantom,
     generate_gravel_phantom,
     generate_waveguide_phantom,
-    generate_branching_phantom,
-    generate_fiber_bundle_phantom,
+    get_probe_field,
     interpolate_to_coarse,
 )
 

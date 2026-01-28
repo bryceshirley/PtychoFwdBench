@@ -3,8 +3,9 @@ PyRAMmp class definition
 """
 
 from multiprocessing.pool import Pool
-from .PyRAM import PyRAM
 from time import sleep
+
+from .PyRAM import PyRAM
 
 
 def run_pyram(run):

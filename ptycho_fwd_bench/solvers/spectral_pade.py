@@ -1,10 +1,12 @@
+import logging
+
 import numpy as np
+from scipy.sparse.linalg import LinearOperator, bicgstab, gmres
+
+from ptycho_fwd_bench.sssp.pade import pade_coefficients
+
 from .base import OpticalWaveSolver
 from .utils import apply_spectral_kernel, get_spectral_coords
-from ptycho_fwd_bench.sssp.pade import pade_coefficients
-from scipy.sparse.linalg import bicgstab, LinearOperator, gmres
-
-import logging
 
 logger = logging.getLogger(__name__)
 

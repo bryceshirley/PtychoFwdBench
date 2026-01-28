@@ -1,5 +1,7 @@
-import numpy as np
 from typing import Optional
+
+import numpy as np
+
 from .base import OpticalWaveSolver
 from .utils import apply_spectral_kernel, get_spectral_coords
 

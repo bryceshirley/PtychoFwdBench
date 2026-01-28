@@ -1,17 +1,19 @@
-import os
 import logging
+import os
 import subprocess
+from unittest import mock
+from unittest.mock import mock_open, patch
+
 import numpy as np
 import pytest
-from unittest import mock
-from unittest.mock import patch, mock_open
+
 from ptycho_fwd_bench.utils import (
     get_git_revision_hash,
-    setup_output_directory,
-    setup_logging,
-    save_ground_truth,
     load_ground_truth,
     parse_config,
+    save_ground_truth,
+    setup_logging,
+    setup_output_directory,
 )
 
 

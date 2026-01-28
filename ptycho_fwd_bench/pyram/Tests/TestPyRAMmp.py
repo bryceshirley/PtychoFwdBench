@@ -6,15 +6,15 @@ Number of PyRAM runs = number of frequencies * number of repetitions.
 Tests should always pass but speedup will depend upon computing environment.
 """
 
+import logging
 import unittest
 import xml.etree.ElementTree as et
-from time import time
 from copy import deepcopy
-import numpy
-from pyram.PyRAMmp import PyRAMmp
-from pyram.PyRAM import PyRAM
+from time import time
 
-import logging
+import numpy
+from pyram.PyRAM import PyRAM
+from pyram.PyRAMmp import PyRAMmp
 
 logger = logging.getLogger(__name__)
 

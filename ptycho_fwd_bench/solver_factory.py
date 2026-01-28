@@ -1,8 +1,12 @@
+from typing import Any, Dict
+
 import numpy as np
 
-from typing import Dict, Any
-from ptycho_fwd_bench.solvers import SpectralPadeSolver, MultisliceSolver
-from ptycho_fwd_bench.solvers import FiniteDifferencePadeSolver
+from ptycho_fwd_bench.solvers import (
+    FiniteDifferencePadeSolver,
+    MultisliceSolver,
+    SpectralPadeSolver,
+)
 
 # --------------------------------------------
 # Solver Factory

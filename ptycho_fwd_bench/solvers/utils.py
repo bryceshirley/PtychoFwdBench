@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.fftpack import dst, idst, dct, idct
+from scipy.fftpack import dct, dst, idct, idst
 
 
 def get_spectral_coords(

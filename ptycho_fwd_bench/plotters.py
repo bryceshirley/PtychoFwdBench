@@ -1,10 +1,10 @@
-import re
-import matplotlib.pyplot as plt
-import numpy as np
+import logging
 import os
+import re
 from typing import Dict, List
 
-import logging
+import matplotlib.pyplot as plt
+import numpy as np
 
 logger = logging.getLogger(__name__)
 

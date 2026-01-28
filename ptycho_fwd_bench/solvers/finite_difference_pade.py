@@ -1,7 +1,10 @@
-import numpy as np
 from typing import Optional, Tuple
-from .base import OpticalWaveSolver
+
+import numpy as np
+
 from ptycho_fwd_bench.pyram.PyRAM import PyRAM
+
+from .base import OpticalWaveSolver
 
 
 class FiniteDifferencePadeSolver(PyRAM, OpticalWaveSolver):
