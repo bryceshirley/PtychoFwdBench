@@ -5,6 +5,7 @@ import numpy as np
 from ptycho_fwd_bench.solvers import (
     FiniteDifferencePadeSolver,
     MultisliceSolver,
+    ParallelMultisliceSolver,
     SpectralPadeSolver,
 )
 
@@ -62,6 +63,11 @@ def create_solver(
             **common_args,
             symmetric=solver_params.get("symmetric", False),
             transform_type=solver_params.get("transform_type", "FFT"),
+        )
+
+    elif s_type == "PARAMS":
+        return ParallelMultisliceSolver(
+            **common_args, alpha=solver_params.get("alpha", 1e-3)
         )
 
     else:
