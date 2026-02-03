@@ -39,7 +39,7 @@ def plot_fine_vs_coarse(
     ax1 = fig.add_subplot(gs[0, 0])
     n_view_fine = n_map_fine[padding_px:-padding_px, :]
     im1 = ax1.imshow(
-        np.real(n_view_fine), extent=extent_map, aspect="auto", cmap="bone"
+        np.real(n_view_fine), extent=extent_map, aspect="auto", cmap="viridis"
     )
     ax1.set_title(f"Refractive Index Fine ({test_case_name})")
     ax1.set_ylabel("X (um)")

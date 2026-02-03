@@ -2,6 +2,8 @@ import logging
 from time import process_time
 from typing import Any, Dict, Optional, Tuple
 
+# --- PyPlot Imports ---
+import matplotlib.pyplot as plt
 import numpy as np
 
 import ptycho_fwd_bench.plotters as plotters
@@ -76,7 +78,7 @@ def generate_simulation_inputs(
 def compute_ground_truth(
     n_map_fine: np.ndarray, psi_0: np.ndarray, sim_params: Dict[str, Any]
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """Runs the high-resolution reference simulation."""
+    """Runs the high-resolution reference simulation and plots the result."""
 
     gt_cfg = sim_params["ground_truth_cfg"]
     n_steps = gt_cfg["n_prop_fine"]
@@ -100,11 +102,39 @@ def compute_ground_truth(
 
     # Extract results (crop padding)
     pad = sim_params["n_pad"]
+    # Assuming 'n_total' is the full grid size including padding?
+    # Usually we crop to 'n_physical' or similar.
+    # Using your existing logic:
     psi_gt = solver.get_exit_wave(n_crop=sim_params["n_total"])[pad:-pad]
 
     beam_field = solver.get_beam_field()
     if beam_field is not None:
-        beam_field = beam_field[pad:-pad, :]
+
+        def plot_wave(u_data, title, filename):
+            plt.figure(figsize=(10, 5))
+            plt.imshow(np.abs(u_data), cmap="magma", aspect="auto", origin="lower")
+            plt.colorbar(label="Wave Amplitude")
+            plt.clim(0, 1.0)
+            plt.title(title)
+            plt.xlabel("Propagation Depth (pixels)")
+            plt.ylabel("Transverse Position (pixels)")
+            plt.tight_layout()
+            plt.savefig(filename, dpi=150)
+            plt.close()
+
+        # --- PLOTTING BLOCK ---
+        try:
+            plot_wave(
+                beam_field, "Ground Truth Propagation", "ground_truth_propagation.png"
+            )
+            logging.info("Saved plot to 'ground_truth_propagation.png'")
+            plt.close()  # Close to free memory
+
+        except Exception as e:
+            logging.warning(f"Could not plot ground truth: {e}")
+
+    # Crop padding from the transverse dimension (axis 0)
+    beam_field = beam_field[pad:-pad, :]
 
     return psi_gt, beam_field
 
