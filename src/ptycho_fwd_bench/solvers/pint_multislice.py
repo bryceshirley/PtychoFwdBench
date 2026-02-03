@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.sparse.linalg import LinearOperator, bicgstab, gmres
 
 from .multislice import MultisliceSolver
 from .utils import get_spectral_coords
@@ -13,216 +14,315 @@ class ParallelMultisliceSolver(MultisliceSolver):
     """
     Parallel 'One-Shot' Multislice Solver using Twisted 3D FFT.
 
-    Replaces sequential time-stepping with a 3D spectral filter.
-    Includes adaptive Richardson correction with Corner Error handling.
+    Solves the preconditioned system A * u = b, where:
+      A = I + M^-1 * E  (The Preconditioned Operator)
+      b = M^-1 * s      (The Preconditioned Source)
     """
 
     def __init__(self, *args, alpha: float = 1e-6, **kwargs):
-        # Force store_beam=True because parallel solve computes all slices at once
         kwargs["store_beam"] = True
         super().__init__(*args, **kwargs)
         self.alpha = float(alpha)
-        self.n_iter = 20  # Fixed number of Richardson iterations
+        self.n_iter = 30
 
         if self.transform_type != "FFT":
             raise ValueError(
                 "ParallelMultisliceSolver only supports FFT transform type."
             )
 
-        # --- Pre-processing ---
         logging.info("Initializing solver...")
-        # We compute the kernel and store the single-step propagator for corrections
         self.K_3d = self._get_3d_kernel()
 
-    def _twisted_fft(self, u: np.ndarray, inverse: bool = False) -> np.ndarray:
+    # =========================================================================
+    #  Core Physics Modules (Modular A and b)
+    # =========================================================================
+
+    def _setup_operators(self):
+        """Pre-computes phase terms needed for A and M^-1."""
+        # N_phase is the half-step phase kick: exp(i * delta_n * dz / 2)
+        N_phase = 1j * self.k0 * self.delta_n * self.dz / 2
+        self._inv_N = np.exp(-N_phase)
+        self._fwd_N = np.exp(N_phase)
+        self._Error_Diag = 1.0 - np.exp(2 * N_phase)
+
+    def _apply_M_inv(self, rhs_vector: np.ndarray) -> np.ndarray:
         """
-        Implements the Twisted 3D FFT.
-        Order: Transform X -> Twist Z -> Transform Z
+        Applies the Approximate Parallel Solver (M^-1).
+        Operation: Refract -> Twisted 3D FFT -> Kernel -> Inverse Twisted FFT -> Refract
         """
-        L = self.nz_steps
+        v = rhs_vector * self._inv_N
 
-        # 1. Transverse Transform (X)
-        if not inverse:
-            u_x = np.fft.fft(u, axis=0)
-        else:
-            u_x = np.fft.ifft(u, axis=0)
+        #
+        v_k = self._twisted_fft(v, inverse=False)
+        v_k *= self.K_3d
+        v = self._twisted_fft(v_k, inverse=True)
 
-        # 2. Twist & Longitudinal Transform (Z)
-        z_indices = np.arange(L)
+        return v * self._inv_N
 
-        if not inverse:
-            # Forward: Twist then FFT
-            gamma = self.alpha ** (z_indices / L)
-            u_twisted = u_x * gamma[np.newaxis, :]  # Broadcast to (Nx, L)
-            return np.fft.fft(u_twisted, axis=1)
-
-        else:
-            # Inverse: IFFT then Untwist
-            u_z = np.fft.ifft(u_x, axis=1)
-            gamma_inv = self.alpha ** (-z_indices / L)
-            return u_z * gamma_inv[np.newaxis, :]
-
-    def _get_3d_kernel(self) -> np.ndarray:
+    def _apply_Error(self, u_vec: np.ndarray) -> np.ndarray:
         """
-        Computes the static 3D Dispersion Kernel K.
-        Also stores self.L_step (2D propagator) for error calculation.
+        Applies the Error Operator (E1 + E2).
+        E1: Diagonal phase errors.
+        E2: Corner/Wrap-around errors.
         """
-        # --- Pre-processing ---
-        self.n_mean = np.mean(self.n_map)
-        self.delta_n = self.n_map - self.n_mean
+        # 1. Diagonal Error (E1)
+        err = self._Error_Diag * u_vec
 
-        # 1. Transverse Propagator (Shifted)
-        kx = get_spectral_coords(self.nx, self.dx, self.transform_type)
-        inside = self.k0sq - kx**2
-        sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
+        # 2. Corner Error (E2)
+        u_last = u_vec[:, -1]
+        val = u_last * self._fwd_N[:, -1]  # Exit Phase (last slice)
+        val_k = np.fft.fft(val) * self.L_step.flatten()  # Diffract
+        val = np.fft.ifft(val_k) * self._fwd_N[:, 0]  # Entry Phase (first slice)
 
-        # Phase shift from Mean Potential: k0 * (n_mean - 1) * dz
-        lambda_vac = 1j * (sqrt_term - self.k0)
-        phi_mean = 1j * self.k0 * (self.n_mean - 1.0)
+        err[:, 0] += val * self.alpha
+        return err
 
-        # Store single-step diffraction operator (used in Corner Error)
-        self.L_step = np.exp((lambda_vac + phi_mean) * self.dz)[:, np.newaxis]
+    def _apply_A(self, u_vec: np.ndarray) -> np.ndarray:
+        """
+        Applies the full Linear Operator A = I + M^-1 * E.
+        """
+        # 1. Calculate Error: e = E * u
+        error_term = self._apply_Error(u_vec)
 
-        # 2. Longitudinal Eigenvalues (Shift Operator)
-        L = self.nz_steps
-        kz = np.arange(L)
-        # lambda_alpha term representing the cyclic shift in Fourier space
-        lam_alpha = (self.alpha ** (1 / L) * np.exp(-2j * np.pi * kz / L))[
-            np.newaxis, :
-        ]
+        # 2. Precondition Error: c = M^-1 * e
+        correction = self._apply_M_inv(error_term)
 
-        # 3. Construct 3D Kernel
-        # K = 1 / (1 - lam_alpha * L_kx)
-        denom = 1.0 - (lam_alpha * self.L_step)
+        # 3. Apply Identity: u + c
+        return u_vec + correction
 
-        # Avoid division by zero if alpha is too small/unstable
-        return 1.0 / denom
+    def _compute_b(self, S: np.ndarray) -> np.ndarray:
+        """
+        Computes the RHS vector b = M^-1 * s.
+        This effectively acts as the 'One-Shot' predictor.
+        """
+        return self._apply_M_inv(S)
+
+    # =========================================================================
+    #  Solvers
+    # =========================================================================
 
     def run(
         self,
         psi_init: Optional[np.ndarray] = None,
-        output_video: str = "convergence.mp4",
+        solver_type: str = "gmres",  # "richardson", "gmres", "bicgstab", "anderson"
+        tol: float = 1e-5,
+        output_video: Optional[str] = "convergence.mp4",
+        history_depth: int = 5,
     ) -> "ParallelMultisliceSolver":
         psi_0 = self.initialize_wavefront(psi_init)
         L = self.nz_steps
 
-        # --- Step 1: Prepare Source Vector ---
+        # 1. Setup Source S
         S = np.zeros((self.nx, L), dtype=np.complex128)
         S[:, 0] = psi_0
 
-        # --- Step 2: Define Operators ---
-        N_phase = 1j * self.k0 * self.delta_n * self.dz / 2
-        inv_N = np.exp(-N_phase)
-        fwd_N = np.exp(N_phase)
-        Error_Diag = 1.0 - np.exp(2 * N_phase)
+        # 2. Setup Physics Operators
+        self._setup_operators()
 
-        def apply_parallel_propagator(rhs_vector):
-            v = rhs_vector * inv_N
-            v_k = self._twisted_fft(v, inverse=False)
-            v_k *= self.K_3d
-            v = self._twisted_fft(v_k, inverse=True)
-            return v * inv_N
+        # 3. Compute b (Initial Guess / RHS)
+        logging.info("Computing Preconditioned Source b = M^-1 s...")
+        b = self._compute_b(S)
 
-        def compute_corner_error(u_current):
-            u_last = u_current[:, -1]
-            val = u_last * fwd_N[:, -1]
-            val_k = np.fft.fft(val)
-            val_k *= self.L_step.flatten()
-            val = np.fft.ifft(val_k)
-            val *= fwd_N[:, 0]
-            val *= self.alpha
-            return val
+        # 4. Define Linear Operator A (for SciPy solvers)
+        N_tot = self.nx * L
 
-        # --- Capture Frames for Video ---
-        # List to store tuples of (Wave Field, Title)
+        def matvec_A(u_flat):
+            u_vol = u_flat.reshape((self.nx, L))
+            return self._apply_A(u_vol).flatten()
+
+        A_op = LinearOperator((N_tot, N_tot), matvec=matvec_A, dtype=np.complex128)
+
+        # --- Frames & Initialization ---
         frames_data: List[Tuple[np.ndarray, str]] = []
 
-        # --- Step 3: Richardson Iteration ---
-        # Initial Predictor
-        u_base = apply_parallel_propagator(S)
-        u_sol = u_base.copy()
+        # Ideally, we start with u0 = b.
+        # This is because b is the solution to M*u=s, i.e., the approximation.
+        u_sol = b.copy()
+        frames_data.append((np.abs(u_sol), "Iter 0: Initial Guess (b)"))
 
-        # Save Frame 0
-        frames_data.append((np.abs(u_base), "Iter 0: Initial Predictor"))
+        stype = solver_type.lower()
 
-        # Correction Loop
-        for it in range(self.n_iter):
-            err_vec = Error_Diag * u_sol
+        # --- Solver Logic ---
 
-            corner_correction = compute_corner_error(u_sol)
-            err_vec[:, 0] += corner_correction
+        if stype == "richardson":
+            # Update: u_{k+1} = u_k + (b - A * u_k)
+            logging.info("Starting Richardson (Preconditioned Form)...")
 
-            correction = apply_parallel_propagator(err_vec)
-            u_sol = u_base - correction
+            for it in range(self.n_iter):
+                # Apply A
+                A_u = self._apply_A(u_sol)
 
-            # Save Frame k
-            frames_data.append((np.abs(u_sol), f"Iter {it + 1}: Correction"))
+                # Residual: r = b - A*u
+                residual = b - A_u
+
+                # Update
+                u_sol = u_sol + residual
+
+                # Convergence Check
+                res_norm = np.linalg.norm(residual)
+
+                frames_data.append((np.abs(u_sol), f"Iter {it + 1}: Richardson"))
+
+                if res_norm < tol:
+                    logging.info(f"Richardson converged at iter {it + 1}")
+                    break
+
+        elif stype == "anderson":
+            # Solve u = u + (b - A*u)  => Find fixed point of G(u) = u + r
+            logging.info(f"Starting Anderson (m={history_depth})...")
+
+            X = []  # History of u
+            F = []  # History of residuals (G(u) - u) = (b - A*u)
+
+            for it in range(self.n_iter):
+                # 1. Evaluate Residual
+                A_u = self._apply_A(u_sol)
+                residual = b - A_u  # This is f(u)
+
+                # Check Convergence
+                if np.linalg.norm(residual) < tol:
+                    logging.info(f"Anderson converged at iter {it}")
+                    break
+
+                # 2. Update History
+                u_flat = u_sol.flatten()
+                f_flat = residual.flatten()
+                X.append(u_flat)
+                F.append(f_flat)
+
+                if len(X) > history_depth:
+                    X.pop(0)
+                    F.pop(0)
+
+                # 3. Anderson Mixing
+                m_k = len(X)
+                if m_k == 1:
+                    u_sol = u_sol + residual
+                else:
+                    # Minimize || f_k - dF * gamma ||
+                    F_mat = np.column_stack(F)
+                    dF = F_mat[:, :-1] - F_mat[:, -1:]
+
+                    if dF.shape[1] > 0:
+                        gamma, _, _, _ = np.linalg.lstsq(dF, f_flat, rcond=None)
+
+                        X_mat = np.column_stack(X)
+                        dX = X_mat[:, :-1] - X_mat[:, -1:]
+
+                        u_mix = u_flat - (dX @ gamma)
+                        f_mix = f_flat - (dF @ gamma)
+
+                        # New Guess = Mixed U + Mixed Residual
+                        u_next = u_mix + f_mix
+                        u_sol = u_next.reshape((self.nx, L))
+                    else:
+                        u_sol = u_sol + residual
+
+                frames_data.append((np.abs(u_sol), f"Iter {it + 1}: Anderson"))
+
+        elif stype in ["gmres", "bicgstab"]:
+            # Solve A * u = b directly
+            # Note: We do NOT pass M to scipy here, because A_op IS the preconditioned system.
+            logging.info(f"Starting {stype.upper()} on A*u = b...")
+
+            iter_count = 0
+
+            def callback(xk):
+                nonlocal iter_count
+                iter_count += 1
+                if output_video:
+                    img = np.abs(xk.reshape((self.nx, L)))
+                    frames_data.append((img, f"Iter {iter_count}: {stype.upper()}"))
+
+            solver_func = gmres if stype == "gmres" else bicgstab
+            # For GMRES, we need callback_type='x' to get the vector for video
+            kwargs = {"callback_type": "x"} if stype == "gmres" else {}
+
+            u_flat, exit_code = solver_func(
+                A_op,
+                b.flatten(),
+                x0=b.flatten(),  # Initialize with b (result of One-Shot)
+                atol=tol,
+                maxiter=self.n_iter,
+                callback=callback,
+                **kwargs,
+            )
+
+            if exit_code == 0:
+                logging.info(f"{stype.upper()} converged in {iter_count} iterations.")
+            else:
+                logging.warning(f"{stype.upper()} did not fully converge.")
+
+            u_sol = u_flat.reshape((self.nx, L))
+
+        else:
+            raise ValueError(f"Unknown solver type: {solver_type}")
 
         # --- Finalize ---
         self.beam_history = u_sol
         self.psi_final = self.beam_history[:, -1]
 
-        # Generate the video
-        self.save_animation(frames_data, output_video)
+        if output_video:
+            self.save_animation(frames_data, output_video)
 
         return self
 
+    def _twisted_fft(self, u: np.ndarray, inverse: bool = False) -> np.ndarray:
+        """Implements the Twisted 3D FFT."""
+        L = self.nz_steps
+        if not inverse:
+            u_x = np.fft.fft(u, axis=0)
+        else:
+            u_x = np.fft.ifft(u, axis=0)
+
+        z_indices = np.arange(L)
+        if not inverse:
+            gamma = self.alpha ** (z_indices / L)
+            u_twisted = u_x * gamma[np.newaxis, :]
+            return np.fft.fft(u_twisted, axis=1)
+        else:
+            u_z = np.fft.ifft(u_x, axis=1)
+            gamma_inv = self.alpha ** (-z_indices / L)
+            return u_z * gamma_inv[np.newaxis, :]
+
+    def _get_3d_kernel(self) -> np.ndarray:
+        """Computes K and stores L_step."""
+        self.n_mean = np.mean(self.n_map)
+        self.delta_n = self.n_map - self.n_mean
+        kx = get_spectral_coords(self.nx, self.dx, self.transform_type)
+        inside = self.k0sq - kx**2
+        sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
+        lambda_vac = 1j * (sqrt_term - self.k0)
+        phi_mean = 1j * self.k0 * (self.n_mean - 1.0)
+        self.L_step = np.exp((lambda_vac + phi_mean) * self.dz)[:, np.newaxis]
+        L = self.nz_steps
+        kz = np.arange(L)
+        lam_alpha = (self.alpha ** (1 / L) * np.exp(-2j * np.pi * kz / L))[
+            np.newaxis, :
+        ]
+        denom = 1.0 - (lam_alpha * self.L_step)
+        return 1.0 / denom
+
     def save_animation(self, frames: List[Tuple[np.ndarray, str]], filename: str):
-        """
-        Compiles the collected frames into an MP4 or GIF animation.
-        """
         if not frames:
-            logging.warning("No frames to animate.")
             return
-
-        # Setup Figure
         fig, ax = plt.subplots(figsize=(10, 5))
-
-        # Initial Plot
         img_data, title = frames[0]
         im = ax.imshow(
             img_data, cmap="magma", aspect="auto", origin="lower", animated=True
         )
-        ax.set_xlabel("Propagation Depth (z)")
-        ax.set_ylabel("Transverse Position (x)")
-        title_text = ax.set_title(title)
+        ax.set_title(title)
+        fig.colorbar(im, ax=ax)
+        im.set_clim(0, np.max([np.max(f[0]) for f in frames]))
 
-        # Colorbar
-        fig.colorbar(im, ax=ax, label="Wave Amplitude")
+        def update(i):
+            im.set_array(frames[i][0])
+            ax.set_title(frames[i][1])
+            return (im,)
 
-        # Fixed scaling based on the maximum of the *final* solution for stability
-        # or use the max of the current frame if you want dynamic scaling.
-        # Here we use global max to stop flickering.
-        global_max = np.max([np.max(f[0]) for f in frames])
-        im.set_clim(0, global_max)
-
-        def update(frame_idx):
-            data, title = frames[frame_idx]
-            im.set_array(data)
-            title_text.set_text(title)
-            return im, title_text
-
-        # Create Animation
-        ani = animation.FuncAnimation(
-            fig,
-            update,
-            frames=len(frames),
-            interval=500,  # 500ms per frame
-            blit=True,
-        )
-
-        # Save
-        logging.info(f"Saving animation to {filename}...")
+        ani = animation.FuncAnimation(fig, update, frames=len(frames), blit=True)
         try:
-            # Try saving as mp4 (requires ffmpeg)
-            if filename.endswith(".mp4"):
-                ani.save(filename, writer="ffmpeg", fps=2)
-            # Fallback to gif if mp4 fails or is requested
-            else:
-                ani.save(filename, writer="pillow", fps=2)
+            ani.save(filename, writer="pillow", fps=2)
         except Exception as e:
-            logging.error(
-                f"Could not save video: {e}. Try installing ffmpeg or saving as .gif."
-            )
-
+            logging.error(str(e))
         plt.close(fig)
