@@ -49,7 +49,9 @@ class FiniteDifferencePadeSolver(PyRAM, OpticalWaveSolver):
         self.pade_order = pade_order
 
         # Arbitrary reference sound speed (m/s)
-        c0 = 1.0
+        n_mean = np.mean(n_map)
+        n_ref_real = np.real(n_mean)
+        c0 = 1.0 / n_ref_real
 
         # Grid Dimensions
         nz, nr_steps = n_map.shape
