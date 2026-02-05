@@ -6,74 +6,145 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.sparse.linalg import LinearOperator, bicgstab, gmres
 
-from .multislice import MultisliceSolver
+from .base import OpticalWaveSolver
 from .utils import get_spectral_coords
 
 
-class ParallelMultisliceSolver(MultisliceSolver):
+class ParallelMultisliceSolver(OpticalWaveSolver):
     """
-    Parallel 'One-Shot' Multislice Solver using Twisted 3D FFT.
+    Parallel 'One-Shot' Multislice Solver (2D Version: x, z).
 
     Solves the preconditioned system A * u = b, where:
       A = I + M^-1 * E  (The Preconditioned Operator)
       b = M^-1 * s      (The Preconditioned Source)
     """
 
-    def __init__(self, *args, alpha: float = 1e-6, **kwargs):
-        kwargs["store_beam"] = True
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        n_map: np.ndarray,
+        dx: float,
+        wavelength: float,
+        probe_dia: float,
+        probe_focus: float,
+        dz: float,
+        store_beam: bool = False,
+        alpha: float = 1e-6,
+    ):
+        super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
         self.alpha = float(alpha)
-        self.n_iter = 30
 
-        if self.transform_type != "FFT":
-            raise ValueError(
-                "ParallelMultisliceSolver only supports FFT transform type."
-            )
-
+        # Initialize Physics
         logging.info("Initializing solver...")
+        self.n_mean = np.mean(self.n_map)
+        self.delta_n = self.n_map - self.n_mean
         self.K_3d = self._get_3d_kernel()
 
     # =========================================================================
-    #  Core Physics Modules (Modular A and b)
+    #  1. Operator Setup (Simplified 2D Implementation)
     # =========================================================================
 
     def _setup_operators(self):
-        """Pre-computes phase terms needed for A and M^-1."""
-        # N_phase is the half-step phase kick: exp(i * delta_n * dz / 2)
+        """
+        Pre-computes phase terms.
+        """
+        L = self.nz_steps
+        z_idx = np.arange(L)
+
+        # A. Physics Terms (Refraction)
+        # N_phase shape: (Nx, L)
         N_phase = 1j * self.k0 * self.delta_n * self.dz / 2
-        self._inv_N = np.exp(-N_phase)
+        inv_N = np.exp(-N_phase)
+
+        # B. Parallel Solver Terms (The Twist)
+        # Gamma acts on z-index (columns). Broadcast to (1, L)
+        gamma = (self.alpha ** (z_idx / L))[np.newaxis, :]
+        gamma_inv = (self.alpha ** (-z_idx / L))[np.newaxis, :]
+
+        # C. Merged Operators for M^-1
+        #   Pre:  Apply Refraction + Twist
+        #   Post: Untwist + Apply Refraction
+        self._pre_mul = inv_N * gamma
+        self._post_mul = inv_N * gamma_inv
+
+        # D. Error Operators (For calculating E)
+        #   These use standard physics definitions (no twist)
         self._fwd_N = np.exp(N_phase)
         self._Error_Diag = 1.0 - np.exp(2 * N_phase)
 
+    def _get_3d_kernel(self) -> np.ndarray:
+        """Computes K for 2D plane (x, z)."""
+        # 1. Transverse Propagator (x direction)
+        kx = get_spectral_coords(self.nx, self.dx, "FFT")  # (Nx,)
+
+        inside = self.k0sq - kx**2
+        sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
+
+        lambda_vac = 1j * (sqrt_term - self.k0)
+        phi_mean = 1j * self.k0 * (self.n_mean - 1.0)
+
+        # L_step shape: (Nx, 1) for broadcasting against Z
+        self.L_step = np.exp((lambda_vac + phi_mean) * self.dz)[:, np.newaxis]
+
+        # 2. Longitudinal Shift (z direction)
+        L = self.nz_steps
+        kz = np.arange(L)
+        # lam_alpha shape: (1, L)
+        lam_alpha = (self.alpha ** (1 / L) * np.exp(-2j * np.pi * kz / L))[
+            np.newaxis, :
+        ]
+
+        # 3. Construct 3D Kernel (Nx, L)
+        # K = 1 / (1 - lam_alpha * L_step)
+        denom = 1.0 - (lam_alpha * self.L_step)
+        return 1.0 / denom
+
+    # =========================================================================
+    #  2. Core Physics Modules
+    # =========================================================================
+
     def _apply_M_inv(self, rhs_vector: np.ndarray) -> np.ndarray:
         """
-        Applies the Approximate Parallel Solver (M^-1).
-        Operation: Refract -> Twisted 3D FFT -> Kernel -> Inverse Twisted FFT -> Refract
+        Applies M^-1 using standard 2D FFT.
+        Sequence: (Refract+Twist) -> FFT2 -> Kernel -> IFFT2 -> (Untwist+Refract)
         """
-        v = rhs_vector * self._inv_N
+        # 1. Combined Real-Space Multiply
+        v = rhs_vector * self._pre_mul  # Depends on position in ptycho scan
 
-        #
-        v_k = self._twisted_fft(v, inverse=False)
-        v_k *= self.K_3d
-        v = self._twisted_fft(v_k, inverse=True)
+        # 2. Standard 2D FFT (Space X, Time Z)
+        v_k = np.fft.fft2(v, axes=(0, 1))
 
-        return v * self._inv_N
+        # 3. Kernel Multiply (Spectral)
+        v_k *= self.K_3d  # Does not depend on position in ptycho scan
+
+        # 4. Standard 2D IFFT
+        v = np.fft.ifft2(v_k, axes=(0, 1))
+
+        # 5. Combined Real-Space Multiply
+        return v * self._post_mul  # Depends on position in ptycho scan
 
     def _apply_Error(self, u_vec: np.ndarray) -> np.ndarray:
         """
         Applies the Error Operator (E1 + E2).
-        E1: Diagonal phase errors.
-        E2: Corner/Wrap-around errors.
         """
         # 1. Diagonal Error (E1)
         err = self._Error_Diag * u_vec
 
         # 2. Corner Error (E2)
+        # Connects last slice L-1 to first slice 0
         u_last = u_vec[:, -1]
-        val = u_last * self._fwd_N[:, -1]  # Exit Phase (last slice)
-        val_k = np.fft.fft(val) * self.L_step.flatten()  # Diffract
-        val = np.fft.ifft(val_k) * self._fwd_N[:, 0]  # Entry Phase (first slice)
 
+        # A. Apply Exit Phase (slice L-1)
+        val = u_last * self._fwd_N[:, -1]
+
+        # B. Apply Diffraction L (1D FFT over x)
+        val_k = np.fft.fft(val, axis=0)
+        val_k *= self.L_step.flatten()  # Does not depend on position in ptycho scan
+        val = np.fft.ifft(val_k, axis=0)
+
+        # C. Apply Entry Phase (slice 0)
+        val *= self._fwd_N[:, 0]
+
+        # Add to first slice of error vector, scaled by alpha
         err[:, 0] += val * self.alpha
         return err
 
@@ -81,21 +152,79 @@ class ParallelMultisliceSolver(MultisliceSolver):
         """
         Applies the full Linear Operator A = I + M^-1 * E.
         """
-        # 1. Calculate Error: e = E * u
+        # e = E * u
         error_term = self._apply_Error(u_vec)
-
-        # 2. Precondition Error: c = M^-1 * e
+        # c = M^-1 * e
         correction = self._apply_M_inv(error_term)
-
-        # 3. Apply Identity: u + c
+        # result = u + c
         return u_vec + correction
 
-    def _compute_b(self, S: np.ndarray) -> np.ndarray:
+    def _apply_M_inv_adjoint(self, rhs_vector: np.ndarray) -> np.ndarray:
         """
-        Computes the RHS vector b = M^-1 * s.
-        This effectively acts as the 'One-Shot' predictor.
+        Applies (M^-1)^H.
+        Forward: (Refract+Twist) -> FFT2 -> Kernel -> IFFT2 -> (Untwist+Refract)
+        Adjoint: (Untwist+Refract)^H -> FFT2 -> (Kernel)^H -> IFFT2 -> (Refract+Twist)^H
         """
-        return self._apply_M_inv(S)
+        # 1. Adjoint of Post-Multiply (Complex Conjugate)
+        v = rhs_vector * np.conj(self._post_mul)
+
+        # 2. 2D FFT
+        v_k = np.fft.fft2(v, axes=(0, 1))
+
+        # 3. Adjoint of Kernel (Complex Conjugate)
+        v_k *= np.conj(self.K_3d)
+
+        # 4. 2D IFFT
+        v = np.fft.ifft2(v_k, axes=(0, 1))
+
+        # 5. Adjoint of Pre-Multiply
+        return v * np.conj(self._pre_mul)
+
+    def _apply_Error_adjoint(self, v_vec: np.ndarray) -> np.ndarray:
+        """
+        Applies E^H.
+        Diagonal terms are easy. Corner term E2 moves from slice 0 to slice L-1.
+        """
+        # 1. Adjoint of Diagonal Error (E1)
+        err = np.conj(self._Error_Diag) * v_vec
+
+        # 2. Adjoint of Corner Error (E2^H)
+        # Forward: u[:, -1] -> slice 0
+        # Adjoint: v[:, 0]  -> slice L-1
+        v_first = v_vec[:, 0]
+
+        # A. Adjoint of Entry Phase (slice 0)
+        val = v_first * np.conj(self._fwd_N[:, 0])
+
+        # B. Adjoint of Diffraction (Reverse L_step)
+        val_k = np.fft.fft(val, axis=0)
+        val_k *= np.conj(self.L_step.flatten())
+        val = np.fft.ifft(val_k, axis=0)
+
+        # C. Adjoint of Exit Phase (slice L-1)
+        val *= np.conj(self._fwd_N[:, -1])
+
+        # Add back to the LAST slice, scaled by alpha (which is real)
+        err[:, -1] += val * self.alpha
+        return err
+
+    def _apply_A_adjoint(self, v_vec: np.ndarray) -> np.ndarray:
+        """
+        Applies A^H = I + E^H * (M^-1)^H
+        """
+        # 1. Apply (M^-1)^H first
+        m_inv_adj = self._apply_M_inv_adjoint(v_vec)
+        # 2. Apply E^H
+        error_adj = self._apply_Error_adjoint(m_inv_adj)
+        # Result = I + E^H @ M^-H
+        return v_vec + error_adj
+
+    def _compute_b(self, S: np.ndarray, mode: str = "forward") -> np.ndarray:
+        """Computes b = M^-1 * s."""
+        if mode == "adjoint":
+            return self._apply_M_inv_adjoint(S)
+        if mode == "forward":
+            return self._apply_M_inv(S)
 
     # =========================================================================
     #  Solvers
@@ -104,10 +233,11 @@ class ParallelMultisliceSolver(MultisliceSolver):
     def run(
         self,
         psi_init: Optional[np.ndarray] = None,
-        solver_type: str = "gmres",  # "richardson", "gmres", "bicgstab", "anderson"
+        solver_type: str = "richardson",  # "richardson", "gmres", "bicgstab", "anderson"
+        mode: str = "forward",
+        n_iter: int = 50,
         tol: float = 1e-5,
         output_video: Optional[str] = "convergence.mp4",
-        history_depth: int = 5,
     ) -> "ParallelMultisliceSolver":
         psi_0 = self.initialize_wavefront(psi_init)
         L = self.nz_steps
@@ -121,21 +251,24 @@ class ParallelMultisliceSolver(MultisliceSolver):
 
         # 3. Compute b (Initial Guess / RHS)
         logging.info("Computing Preconditioned Source b = M^-1 s...")
-        b = self._compute_b(S)
+        b = self._compute_b(S, mode=mode)
 
         # 4. Define Linear Operator A (for SciPy solvers)
         N_tot = self.nx * L
 
         def matvec_A(u_flat):
             u_vol = u_flat.reshape((self.nx, L))
-            return self._apply_A(u_vol).flatten()
+            if mode == "adjoint":
+                return self._apply_A_adjoint(u_vol).flatten()
+            else:
+                return self._apply_A(u_vol).flatten()
 
         A_op = LinearOperator((N_tot, N_tot), matvec=matvec_A, dtype=np.complex128)
 
         # --- Frames & Initialization ---
         frames_data: List[Tuple[np.ndarray, str]] = []
 
-        # Ideally, we start with u0 = b.
+        # We start with u0 = b.
         # This is because b is the solution to M*u=s, i.e., the approximation.
         u_sol = b.copy()
         frames_data.append((np.abs(u_sol), "Iter 0: Initial Guess (b)"))
@@ -148,9 +281,13 @@ class ParallelMultisliceSolver(MultisliceSolver):
             # Update: u_{k+1} = u_k + (b - A * u_k)
             logging.info("Starting Richardson (Preconditioned Form)...")
 
-            for it in range(self.n_iter):
+            for it in range(n_iter):
                 # Apply A
-                A_u = self._apply_A(u_sol)
+                A_u = (
+                    self._apply_A(u_sol)
+                    if mode == "forward"
+                    else self._apply_A_adjoint(u_sol)
+                )
 
                 # Residual: r = b - A*u
                 residual = b - A_u
@@ -169,12 +306,13 @@ class ParallelMultisliceSolver(MultisliceSolver):
 
         elif stype == "anderson":
             # Solve u = u + (b - A*u)  => Find fixed point of G(u) = u + r
+            history_depth = 5
             logging.info(f"Starting Anderson (m={history_depth})...")
 
             X = []  # History of u
             F = []  # History of residuals (G(u) - u) = (b - A*u)
 
-            for it in range(self.n_iter):
+            for it in range(n_iter):
                 # 1. Evaluate Residual
                 A_u = self._apply_A(u_sol)
                 residual = b - A_u  # This is f(u)
@@ -243,7 +381,7 @@ class ParallelMultisliceSolver(MultisliceSolver):
                 b.flatten(),
                 x0=b.flatten(),  # Initialize with b (result of One-Shot)
                 atol=tol,
-                maxiter=self.n_iter,
+                maxiter=n_iter,
                 callback=callback,
                 **kwargs,
             )
@@ -266,42 +404,6 @@ class ParallelMultisliceSolver(MultisliceSolver):
             self.save_animation(frames_data, output_video)
 
         return self
-
-    def _twisted_fft(self, u: np.ndarray, inverse: bool = False) -> np.ndarray:
-        """Implements the Twisted 3D FFT."""
-        L = self.nz_steps
-        if not inverse:
-            u_x = np.fft.fft(u, axis=0)
-        else:
-            u_x = np.fft.ifft(u, axis=0)
-
-        z_indices = np.arange(L)
-        if not inverse:
-            gamma = self.alpha ** (z_indices / L)
-            u_twisted = u_x * gamma[np.newaxis, :]
-            return np.fft.fft(u_twisted, axis=1)
-        else:
-            u_z = np.fft.ifft(u_x, axis=1)
-            gamma_inv = self.alpha ** (-z_indices / L)
-            return u_z * gamma_inv[np.newaxis, :]
-
-    def _get_3d_kernel(self) -> np.ndarray:
-        """Computes K and stores L_step."""
-        self.n_mean = np.mean(self.n_map)
-        self.delta_n = self.n_map - self.n_mean
-        kx = get_spectral_coords(self.nx, self.dx, self.transform_type)
-        inside = self.k0sq - kx**2
-        sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
-        lambda_vac = 1j * (sqrt_term - self.k0)
-        phi_mean = 1j * self.k0 * (self.n_mean - 1.0)
-        self.L_step = np.exp((lambda_vac + phi_mean) * self.dz)[:, np.newaxis]
-        L = self.nz_steps
-        kz = np.arange(L)
-        lam_alpha = (self.alpha ** (1 / L) * np.exp(-2j * np.pi * kz / L))[
-            np.newaxis, :
-        ]
-        denom = 1.0 - (lam_alpha * self.L_step)
-        return 1.0 / denom
 
     def save_animation(self, frames: List[Tuple[np.ndarray, str]], filename: str):
         if not frames:
