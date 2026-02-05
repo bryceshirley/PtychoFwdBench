@@ -71,57 +71,50 @@ def generate_empty_phantom(nz: int, nr: int, n_background: float = 1.0) -> np.nd
 
 
 def generate_blob_phantom(
+    nx: int,
     nz: int,
-    nr: int,
     n_background: float = 1.0,
     delta_n: float = 0.01,
     beta_n: float = 0.01,
     n_blobs: int = 100,
+    rx_range: tuple = None,
+    rz_range: tuple = None,
+    pad_x: int = None,
+    pad_z: int = None,
     seed: int = 42,
-    **kwargs,
 ) -> np.ndarray:
     """
-    Generates a phantom with soft, cosine-tapered circular blobs.
-    Respects physical sizing if 'blob_r_range_um' and 'dx' are provided.
-
-    Parameters:
-        nz (int): Transverse grid size.
-        nr (int): Propagation grid size.
-        n_background (float): Background refractive index.
-        delta_n (float): Refractive index contrast for blobs.
-        beta_n (float): Absorption contrast for blobs.
-        n_blobs (int): Number of blobs to generate.
-        seed (int): Random seed for reproducibility.
+    Generates a phantom with soft, cosine-tapered elliptical blobs.
     """
-    n_map = generate_empty_phantom(nz, nr, n_background)
-    z_idx, x_idx = np.meshgrid(np.arange(nr), np.arange(nz))
+    n_map = np.full((nx, nz), n_background, dtype=complex)
+    z_idx, x_idx = np.meshgrid(np.arange(nz), np.arange(nx))
 
     np.random.seed(seed)
 
-    # Determine Blob Size Limits (Pixels)
-    if "blob_r_range_um" in kwargs and "dx" in kwargs:
-        # Physics-aware sizing
-        r_min_um, r_max_um = kwargs["blob_r_range_um"]
-        dx = kwargs["dx"]
-        r_min = int(r_min_um / dx)
-        r_max = int(r_max_um / dx)
-    else:
-        # Legacy pixel-relative sizing
-        r_min = max(1, nz // 30)
-        r_max = max(2, nz // 12)
+    # Defaults: Smaller blobs (~2.5% to 6.6% of dimension)
+    if rx_range is None:
+        rx_range = (max(1, nx // 40), max(2, nx // 15))
+    if rz_range is None:
+        rz_range = (max(1, nz // 40), max(2, nz // 15))
 
-    pad = nz // 8
+    # Defaults: Larger padding (1/6th of dimension)
+    if pad_x is None:
+        pad_x = nx // 6
+    if pad_z is None:
+        pad_z = nz // 6
 
     for _ in range(n_blobs):
-        cx = np.random.randint(pad, nz - pad)
-        cz = np.random.randint(0, nr)
-        radius = np.random.randint(r_min, r_max + 1)
+        rx = np.random.randint(rx_range[0], rx_range[1] + 1)
+        rz = np.random.randint(rz_range[0], rz_range[1] + 1)
 
-        dist = np.sqrt((x_idx - cx) ** 2 + (z_idx - cz) ** 2)
-        mask = dist <= radius
+        cx = np.random.randint(pad_x, nx - pad_x)
+        cz = np.random.randint(pad_z, nz - pad_z)
 
-        # Cosine Taper for soft edges
-        taper = np.cos(np.pi * dist[mask] / (2 * radius))
+        # Elliptical distance <= 1.0
+        dist_norm = np.sqrt(((x_idx - cx) / rx) ** 2 + ((z_idx - cz) / rz) ** 2)
+        mask = dist_norm <= 1.0
+
+        taper = np.cos(np.pi * dist_norm[mask] / 2)
         n_map[mask] += (delta_n + 1j * beta_n) * taper
 
     return n_map
