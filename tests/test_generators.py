@@ -76,16 +76,16 @@ def test_probe_curvature_direction():
 
 @pytest.fixture
 def grid_params():
-    return {"nz": 100, "nr": 50, "dx": 0.1}
+    return {"nx": 100, "nz": 50, "dx": 0.1}
 
 
 def test_generate_empty_phantom(grid_params):
     bg = 1.33
     n_map = generate_empty_phantom(
-        grid_params["nz"], grid_params["nr"], n_background=bg
+        grid_params["nx"], grid_params["nz"], n_background=bg
     )
 
-    assert n_map.shape == (grid_params["nz"], grid_params["nr"])
+    assert n_map.shape == (grid_params["nx"], grid_params["nz"])
     assert np.allclose(n_map, bg)
     assert np.iscomplexobj(n_map)
 
@@ -93,9 +93,9 @@ def test_generate_empty_phantom(grid_params):
 def test_generate_blob_phantom_defaults(grid_params):
     """Test basic blob generation with defaults."""
     n_map = generate_blob_phantom(
-        grid_params["nz"], grid_params["nr"], n_background=1.0, n_blobs=10
+        grid_params["nx"], grid_params["nz"], n_background=1.0, n_blobs=10
     )
-    assert n_map.shape == (grid_params["nz"], grid_params["nr"])
+    assert n_map.shape == (grid_params["nx"], grid_params["nz"])
     # Should have values other than background
     assert not np.allclose(n_map, 1.0)
 
@@ -103,21 +103,19 @@ def test_generate_blob_phantom_defaults(grid_params):
 def test_generate_blob_phantom_physics_sizing(grid_params):
     """Test that providing dx and physical ranges works without crashing."""
     n_map = generate_blob_phantom(
+        grid_params["nx"],
         grid_params["nz"],
-        grid_params["nr"],
         n_background=1.0,
-        dx=grid_params["dx"],
-        blob_r_range_um=[0.5, 1.0],  # 5 to 10 pixels
         n_blobs=5,
     )
-    assert n_map.shape == (grid_params["nz"], grid_params["nr"])
+    assert n_map.shape == (grid_params["nx"], grid_params["nz"])
 
 
 def test_generate_gravel_phantom_reproducibility(grid_params):
     """Test that seed produces identical results."""
     kwargs = {
+        "nx": grid_params["nx"],
         "nz": grid_params["nz"],
-        "nr": grid_params["nr"],
         "n_blobs": 20,
         "seed": 42,
     }
@@ -134,15 +132,15 @@ def test_generate_waveguide_phantom(grid_params):
     width_um = 2.0  # 20 pixels with dx=0.1
 
     n_map = generate_waveguide_phantom(
+        grid_params["nx"],
         grid_params["nz"],
-        grid_params["nr"],
         n_background=bg,
         delta_n=delta,
         width_um=width_um,
         dx=grid_params["dx"],
     )
 
-    center = grid_params["nz"] // 2
+    center = grid_params["nx"] // 2
     edge = 0
 
     # Core check (real part)
@@ -154,23 +152,23 @@ def test_generate_waveguide_phantom(grid_params):
 def test_generate_branching_phantom_structure(grid_params):
     """Test basic structure generation."""
     n_map = generate_branching_phantom(
-        grid_params["nz"], grid_params["nr"], initial_thickness=2.0
+        grid_params["nx"], grid_params["nz"], initial_thickness=2.0
     )
-    assert n_map.shape == (grid_params["nz"], grid_params["nr"])
+    assert n_map.shape == (grid_params["nx"], grid_params["nz"])
     assert np.iscomplexobj(n_map)
 
 
 def test_generate_fiber_bundle_phantom(grid_params):
     """Test fiber bundle generation."""
     n_map = generate_fiber_bundle_phantom(
+        grid_params["nx"],
         grid_params["nz"],
-        grid_params["nr"],
         n_background=1.0,
         delta_n=0.1,
         fiber_rad_um=1.0,  # 10 pixels
         dx=grid_params["dx"],
     )
-    assert n_map.shape == (grid_params["nz"], grid_params["nr"])
+    assert n_map.shape == (grid_params["nx"], grid_params["nz"])
 
 
 # =============================================================================
@@ -181,13 +179,13 @@ def test_generate_fiber_bundle_phantom(grid_params):
 def test_interpolate_to_coarse():
     """Test downsampling interpolation."""
     # Create a 100x100 map
-    nz, nr_fine = 100, 100
-    n_map_fine = np.ones((nz, nr_fine))
+    nx, nz = 100, 100
+    n_map_fine = np.ones((nx, nz), dtype=np.complex128)
 
     # Downsample Z to 10 steps
-    nr_coarse = 10
-    n_map_coarse = interpolate_to_coarse(n_map_fine, nr_coarse)
+    nz_coarse = 10
+    n_map_coarse = interpolate_to_coarse(n_map_fine, nz_coarse)
 
-    assert n_map_coarse.shape == (nz, nr_coarse)
+    assert n_map_coarse.shape == (nx, nz_coarse)
     # Values should be preserved for a constant map
     assert np.allclose(n_map_coarse, 1.0)

@@ -55,19 +55,19 @@ def get_probe_field(
 # =============================================================================
 
 
-def generate_empty_phantom(nz: int, nr: int, n_background: float = 1.0) -> np.ndarray:
+def generate_empty_phantom(nx: int, nz: int, n_background: float = 1.0) -> np.ndarray:
     """
     Generates a homogeneous refractive index map.
 
     Args:
-        nz (int): Number of pixels in the transverse direction (rows).
-        nr (int): Number of pixels in the propagation direction (columns).
+        nx (int): Number of pixels in the transverse direction (rows).
+        nz (int): Number of pixels in the propagation direction (columns).
         n_background (float): The refractive index value.
 
     Returns:
         np.ndarray: 2D complex array initialized to the background value.
     """
-    return np.ones((nz, nr), dtype=np.complex128) * n_background
+    return np.ones((nx, nz), dtype=np.complex128) * n_background
 
 
 def generate_blob_phantom(
@@ -121,8 +121,8 @@ def generate_blob_phantom(
 
 
 def generate_gravel_phantom(
+    nx: int,
     nz: int,
-    nr: int,
     n_background: float = 1.0,
     delta_n: float = 0.2,
     beta_n: float = 0.02,
@@ -134,16 +134,16 @@ def generate_gravel_phantom(
     Generates a phantom with hard-edged, high-contrast scatterers.
 
     Parameters:
-        nz (int): Number of pixels in the transverse direction (rows).
-        nr (int): Number of pixels in the propagation direction (columns).
+        nx (int): Number of pixels in the transverse direction (rows).
+        nz (int): Number of pixels in the propagation direction (columns).
         n_background (float): The refractive index value.
         delta_n (float): Refractive index contrast of the blobs.
         beta_n (float): Absorptive part of the refractive index of the blobs.
         n_blobs (int): Number of blobs to generate.
         seed (int): Random seed for reproducibility.
     """
-    n_map = generate_empty_phantom(nz, nr, n_background)
-    z_idx, x_idx = np.meshgrid(np.arange(nr), np.arange(nz))
+    n_map = generate_empty_phantom(nx, nz, n_background)
+    z_idx, x_idx = np.meshgrid(np.arange(nz), np.arange(nx))
 
     np.random.seed(seed)
 
@@ -155,14 +155,14 @@ def generate_gravel_phantom(
         r_min = max(1, int(avg_r_px * 0.5))
         r_max = max(2, int(avg_r_px * 1.5))
     else:
-        r_min = max(1, nz // 100)
-        r_max = max(2, nz // 40)
+        r_min = max(1, nx // 100)
+        r_max = max(2, nx // 40)
 
-    pad = nz // 8
+    pad = nx // 8
 
     for _ in range(n_blobs):
-        cx = np.random.randint(pad, nz - pad)
-        cz = np.random.randint(0, nr)
+        cx = np.random.randint(pad, nx - pad)
+        cz = np.random.randint(0, nz)
         radius = np.random.randint(r_min, r_max + 1)
 
         dist = np.sqrt((x_idx - cx) ** 2 + (z_idx - cz) ** 2)
@@ -177,8 +177,8 @@ def generate_gravel_phantom(
 
 
 def generate_waveguide_phantom(
+    nx: int,
     nz: int,
-    nr: int,
     n_background: float = 1.0,
     delta_n: float = 0.1,
     beta_n: float = 0.0,
@@ -190,8 +190,8 @@ def generate_waveguide_phantom(
     Generates a simple straight waveguide channel centered in the grid.
 
     Args:
-        nz (int): Transverse grid size.
-        nr (int): Propagation grid size.
+        nx (int): Transverse grid size.
+        nz (int): Propagation grid size.
         n_background (float): Cladding refractive index.
         delta_n (float): Core refractive index difference (n_core = n_bg + delta_n).
         beta_n (float): Core absorption.
@@ -202,9 +202,9 @@ def generate_waveguide_phantom(
     Returns:
         np.ndarray: The generated refractive index map.
     """
-    n_map = generate_empty_phantom(nz, nr, n_background)
+    n_map = generate_empty_phantom(nx, nz, n_background)
     width_pixels = int(width_um / dx)
-    center_x = nz // 2
+    center_x = nx // 2
     start = center_x - width_pixels // 2
     end = center_x + width_pixels // 2
     n_map[start:end, :] += delta_n + 1j * beta_n
@@ -212,8 +212,8 @@ def generate_waveguide_phantom(
 
 
 def generate_branching_phantom(
+    nx: int,
     nz: int,
-    nr: int,
     n_background: float = 1.33,
     delta_n: float = 0.03,
     initial_thickness: float = 5.0,
@@ -229,8 +229,8 @@ def generate_branching_phantom(
     and are repelled from the center axis to fill the volume.
 
     Args:
-        nz (int): Transverse grid size.
-        nr (int): Propagation grid size.
+        nx (int): Transverse grid size.
+        nz (int): Propagation grid size.
         n_background (float): Base refractive index.
         delta_n (float): Refractive index change of the branches.
         initial_thickness (float): Starting thickness of the root trunks (pixels).
@@ -243,8 +243,8 @@ def generate_branching_phantom(
         np.ndarray: The generated refractive index map.
     """
     # Explicitly matches logic of original code
-    n_map = np.zeros((nz, nr), dtype=float)
-    center_x = nz / 2.0
+    n_map = np.zeros((nx, nz), dtype=float)
+    center_x = nx / 2.0
 
     active_tips = []
     n_trunks = 3
@@ -268,23 +268,23 @@ def generate_branching_phantom(
             tip["z"] += step_size
             tip["x"] += np.sin(tip["angle"]) * step_size
 
-            if 0 <= tip["x"] < nz and 0 <= tip["z"] < nr:
+            if 0 <= tip["x"] < nx and 0 <= tip["z"] < nz:
                 ix, iz = int(tip["x"]), int(tip["z"])
                 r = int(round(tip["thick"] / 2.0))
                 x_start = max(0, ix - r)
-                x_end = min(nz, ix + r + 1)
+                x_end = min(nx, ix + r + 1)
                 n_map[x_start:x_end, iz] = 1.0
 
             dist_from_center = tip["x"] - center_x
             push_force = (
-                np.sign(dist_from_center) * repulsion * (abs(dist_from_center) / nz)
+                np.sign(dist_from_center) * repulsion * (abs(dist_from_center) / nx)
             )
             tip["angle"] += push_force
 
             if (
-                (tip["z"] > nr * 0.1)
+                (tip["z"] > nz * 0.1)
                 and (np.random.rand() < branching_prob)
-                and (tip["z"] < nr * 0.9)
+                and (tip["z"] < nz * 0.9)
                 and len(new_tips) < 50
             ):
                 tip["angle"] -= split_angle / 2.0
@@ -295,7 +295,7 @@ def generate_branching_phantom(
                 new_branch["angle"] += split_angle
                 new_tips.append(new_branch)
 
-            if tip["z"] < nr - 1 and 0 <= tip["x"] < nz and tip["thick"] >= 1.0:
+            if tip["z"] < nz - 1 and 0 <= tip["x"] < nx and tip["thick"] >= 1.0:
                 new_tips.append(tip)
 
         active_tips = new_tips
@@ -311,8 +311,8 @@ def generate_branching_phantom(
 
 
 def generate_fiber_bundle_phantom(
+    nx: int,
     nz: int,
-    nr: int,
     n_background: float = 1.33,
     delta_n: float = 0.02,
     fiber_rad_um: float = 2.0,
@@ -328,8 +328,8 @@ def generate_fiber_bundle_phantom(
     Fibers propagate in Z with a sinusoidal perturbation in X.
 
     Args:
-        nz (int): Transverse grid size.
-        nr (int): Propagation grid size.
+        nx (int): Transverse grid size.
+        nz (int): Propagation grid size.
         n_background (float): Base refractive index.
         delta_n (float): Refractive index change of fibers.
         fiber_rad_um (float): Radius of individual fibers.
@@ -342,16 +342,16 @@ def generate_fiber_bundle_phantom(
     Returns:
         np.ndarray: The generated refractive index map.
     """
-    n_map = np.ones((nz, nr), dtype=np.complex128) * n_background
-    z_coords_um = np.linspace(0, nr * dx, nr)
-    physical_width_um = nz * dx
+    n_map = np.ones((nx, nz), dtype=np.complex128) * n_background
+    z_coords_um = np.linspace(0, nz * dx, nz)
+    physical_width_um = nx * dx
     n_fibers = int((physical_width_um * density) / (2 * fiber_rad_um))
 
     np.random.seed(seed)
-    pad = nz // 10
+    pad = nx // 10
 
     for _ in range(n_fibers):
-        x_center_0 = np.random.randint(pad, nz - pad)
+        x_center_0 = np.random.randint(pad, nx - pad)
         period_um = np.random.uniform(50.0, 150.0)
         phase = np.random.uniform(0, 2 * np.pi)
 
@@ -360,7 +360,7 @@ def generate_fiber_bundle_phantom(
         )
         path_x_idx = path_x_um / dx
 
-        x_grid = np.arange(nz).reshape(-1, 1)
+        x_grid = np.arange(nx).reshape(-1, 1)
         dist = np.abs(x_grid - path_x_idx.reshape(1, -1))
         rad_pix = fiber_rad_um / dx
 
@@ -384,6 +384,6 @@ def interpolate_to_coarse(n_map_fine: np.ndarray, n_steps_coarse: int) -> np.nda
     Returns:
         np.ndarray: The downsampled map.
     """
-    nx, nz_fine = n_map_fine.shape
-    zoom_factor = n_steps_coarse / nz_fine
+    nx, nx_fine = n_map_fine.shape
+    zoom_factor = n_steps_coarse / nx_fine
     return zoom(n_map_fine, (1, zoom_factor), order=1)
