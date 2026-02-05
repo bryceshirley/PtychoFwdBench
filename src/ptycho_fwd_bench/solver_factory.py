@@ -63,6 +63,7 @@ def create_solver(
             **common_args,
             symmetric=solver_params.get("symmetric", False),
             transform_type=solver_params.get("transform_type", "FFT"),
+            use_richardson=solver_params.get("use_richardson", False),
         )
 
     elif s_type == "PARAMS":
