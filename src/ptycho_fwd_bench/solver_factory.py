@@ -3,10 +3,13 @@ from typing import Any, Dict
 import numpy as np
 
 from ptycho_fwd_bench.solvers import (
+    ExactParallelSolver,
     FiniteDifferencePadeSolver,
     MultisliceSolver,
     ParallelMultisliceSolver,
+    ParallelMultisliceSolver2,
     SpectralPadeSolver,
+    WaveletMultisliceSolver,
 )
 
 # --------------------------------------------
@@ -61,14 +64,42 @@ def create_solver(
     elif s_type in ["MULTISLICE", "MS"]:
         return MultisliceSolver(
             **common_args,
-            symmetric=solver_params.get("symmetric", False),
+            symmetric=solver_params.get("symmetric", True),
             transform_type=solver_params.get("transform_type", "FFT"),
             use_richardson=solver_params.get("use_richardson", False),
         )
 
     elif s_type == "PARAMS":
         return ParallelMultisliceSolver(
-            **common_args, alpha=solver_params.get("alpha", 1e-3)
+            **common_args,
+            alpha=solver_params.get("alpha", 1e-3),
+            n_iter=solver_params.get("n_iter", 2),
+            solver_type=solver_params.get("solver_type", "richardson"),
+        )
+    elif s_type == "PARAMS2":
+        return ParallelMultisliceSolver2(
+            **common_args,
+            alpha=solver_params.get("alpha", 1e-3),
+            n_iter=solver_params.get("n_iter", 2),
+            solver_type=solver_params.get("solver_type", "richardson"),
+        )
+
+    elif s_type == "WAVELET_MULTISLICE":
+        wavelet_solver = WaveletMultisliceSolver(
+            **common_args,
+            symmetric=solver_params.get("symmetric", True),
+            wavelet_name=solver_params.get("wavelet_name", "db4"),
+            compression_threshold=solver_params.get("compression_threshold", 1e-5),
+        )
+        wavelet_solver.build_propagator_matrix()
+        return wavelet_solver
+
+    elif s_type == "EXACTPARALLEL":
+        return ExactParallelSolver(
+            **common_args,
+            alpha=solver_params.get("alpha", 1e-6),
+            n_iter=solver_params.get("n_iter", 2),
+            solver_type=solver_params.get("solver_type", "gmres"),
         )
 
     else:

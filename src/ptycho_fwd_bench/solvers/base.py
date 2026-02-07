@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -21,6 +22,11 @@ class OpticalWaveSolver(ABC):
         probe_focus: float = 0,
         store_beam: bool = False,
     ):
+        if np.any(n_map < 1e-9):
+            logging.warning(
+                "Found zeros/negatives in n_map! Replacing with 1.0 (Vacuum)."
+            )
+            n_map = np.where(n_map < 1e-9, 1.0, n_map)
         self.n_map = n_map
         self.nx, self.nz_steps = n_map.shape
         self.dx = dx

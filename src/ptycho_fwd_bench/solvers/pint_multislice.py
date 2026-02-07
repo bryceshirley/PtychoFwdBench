@@ -29,6 +29,8 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         dz: float,
         store_beam: bool = False,
         alpha: float = 1e-6,
+        n_iter: int = 3,
+        solver_type: str = "richardson",
     ):
         super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
         self.alpha = float(alpha)
@@ -38,12 +40,14 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         self.n_mean = np.mean(self.n_map)
         self.delta_n = self.n_map - self.n_mean
         self.K_3d = self._get_3d_kernel()
+        self.n_iter = n_iter
+        self.solver_type = solver_type
 
     # =========================================================================
     #  1. Operator Setup (Simplified 2D Implementation)
     # =========================================================================
 
-    def _setup_operators(self):
+    def setup_operators(self):
         """
         Pre-computes phase terms.
         """
@@ -76,27 +80,28 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         # 1. Transverse Propagator (x direction)
         kx = get_spectral_coords(self.nx, self.dx, "FFT")  # (Nx,)
 
+        # Transverse Propagator P
         inside = self.k0sq - kx**2
         sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
-
         lambda_vac = 1j * (sqrt_term - self.k0)
         phi_mean = 1j * self.k0 * (self.n_mean - 1.0)
 
-        # L_step shape: (Nx, 1) for broadcasting against Z
-        self.L_step = np.exp((lambda_vac + phi_mean) * self.dz)[:, np.newaxis]
+        # _P_shifted shape: (Nx, 1) for broadcasting against Z
+        self._P_shifted = np.exp((lambda_vac + phi_mean) * self.dz)[:, np.newaxis]
 
         # 2. Longitudinal Shift (z direction)
         L = self.nz_steps
         kz = np.arange(L)
-        # lam_alpha shape: (1, L)
+
+        # lam_alpha
         lam_alpha = (self.alpha ** (1 / L) * np.exp(-2j * np.pi * kz / L))[
             np.newaxis, :
         ]
 
         # 3. Construct 3D Kernel (Nx, L)
-        # K = 1 / (1 - lam_alpha * L_step)
-        denom = 1.0 - (lam_alpha * self.L_step)
-        return 1.0 / denom
+        # K = 1 / (1 - lam_alpha * _P_shifted)
+        denom = 1.0 - (lam_alpha * self._P_shifted)
+        return 1.0 / (denom + 1e-15)
 
     # =========================================================================
     #  2. Core Physics Modules
@@ -138,7 +143,7 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
 
         # B. Apply Diffraction L (1D FFT over x)
         val_k = np.fft.fft(val, axis=0)
-        val_k *= self.L_step.flatten()  # Does not depend on position in ptycho scan
+        val_k *= self._P_shifted.flatten()  # Does not depend on position in ptycho scan
         val = np.fft.ifft(val_k, axis=0)
 
         # C. Apply Entry Phase (slice 0)
@@ -196,9 +201,9 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         # A. Adjoint of Entry Phase (slice 0)
         val = v_first * np.conj(self._fwd_N[:, 0])
 
-        # B. Adjoint of Diffraction (Reverse L_step)
+        # B. Adjoint of Diffraction (Reverse _P_shifted)
         val_k = np.fft.fft(val, axis=0)
-        val_k *= np.conj(self.L_step.flatten())
+        val_k *= np.conj(self._P_shifted.flatten())
         val = np.fft.ifft(val_k, axis=0)
 
         # C. Adjoint of Exit Phase (slice L-1)
@@ -233,21 +238,31 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
     def run(
         self,
         psi_init: Optional[np.ndarray] = None,
-        solver_type: str = "richardson",  # "richardson", "gmres", "bicgstab", "anderson"
         mode: str = "forward",
-        n_iter: int = 50,
         tol: float = 1e-5,
-        output_video: Optional[str] = "convergence.mp4",
+        output_video: Optional[str] = None,
     ) -> "ParallelMultisliceSolver":
+        # 1. Setup Physics Operators
+        if not hasattr(self, "_pre_mul"):
+            self.setup_operators()
+
+        # 2. Setup Source S
         psi_0 = self.initialize_wavefront(psi_init)
         L = self.nz_steps
-
-        # 1. Setup Source S
         S = np.zeros((self.nx, L), dtype=np.complex128)
-        S[:, 0] = psi_0
 
-        # 2. Setup Physics Operators
-        self._setup_operators()
+        # Compute exact P = O * P_prop * O * psi_0
+        # A. First Half-Refract
+        temp = psi_0 * self._fwd_N[:, 0]
+        # B. Propagate (requires FFT)
+        temp_k = np.fft.fft(temp)
+        temp_k *= self._P_shifted.flatten()
+        temp = np.fft.ifft(temp_k)
+        # C. Second Half-Refract
+        P_exact = temp * self._fwd_N[:, 0]
+        S[:, 0] = (
+            P_exact  # Source is the exact first slice after probe entry (including refraction)
+        )
 
         # 3. Compute b (Initial Guess / RHS)
         logging.info("Computing Preconditioned Source b = M^-1 s...")
@@ -264,24 +279,33 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
                 return self._apply_A(u_vol).flatten()
 
         A_op = LinearOperator((N_tot, N_tot), matvec=matvec_A, dtype=np.complex128)
-
-        # --- Frames & Initialization ---
-        frames_data: List[Tuple[np.ndarray, str]] = []
-
         # We start with u0 = b.
         # This is because b is the solution to M*u=s, i.e., the approximation.
         u_sol = b.copy()
-        frames_data.append((np.abs(u_sol), "Iter 0: Initial Guess (b)"))
 
-        stype = solver_type.lower()
+        if output_video:
+            # --- Frames & Initialization ---
+            frames_data: List[Tuple[np.ndarray, str]] = []
+            frames_data.append((np.abs(u_sol), "Iter 0: Initial Guess (b)"))
+
+        if self.n_iter == 0:
+            logging.info(
+                "n_iter=0: Skipping solver iterations. Output will be initial guess b."
+            )
+            # --- Finalize ---
+            self.beam_history = u_sol
+            self.psi_final = self.beam_history[:, -1]
+
+            return self
+
+        stype = self.solver_type.lower()
 
         # --- Solver Logic ---
-
         if stype == "richardson":
             # Update: u_{k+1} = u_k + (b - A * u_k)
             logging.info("Starting Richardson (Preconditioned Form)...")
 
-            for it in range(n_iter):
+            for it in range(self.n_iter):
                 # Apply A
                 A_u = (
                     self._apply_A(u_sol)
@@ -298,7 +322,8 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
                 # Convergence Check
                 res_norm = np.linalg.norm(residual)
 
-                frames_data.append((np.abs(u_sol), f"Iter {it + 1}: Richardson"))
+                if output_video:
+                    frames_data.append((np.abs(u_sol), f"Iter {it + 1}: Richardson"))
 
                 if res_norm < tol:
                     logging.info(f"Richardson converged at iter {it + 1}")
@@ -312,7 +337,7 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
             X = []  # History of u
             F = []  # History of residuals (G(u) - u) = (b - A*u)
 
-            for it in range(n_iter):
+            for it in range(self.n_iter):
                 # 1. Evaluate Residual
                 A_u = self._apply_A(u_sol)
                 residual = b - A_u  # This is f(u)
@@ -356,7 +381,8 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
                     else:
                         u_sol = u_sol + residual
 
-                frames_data.append((np.abs(u_sol), f"Iter {it + 1}: Anderson"))
+                if output_video:
+                    frames_data.append((np.abs(u_sol), f"Iter {it + 1}: Anderson"))
 
         elif stype in ["gmres", "bicgstab"]:
             # Solve A * u = b directly
@@ -381,7 +407,7 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
                 b.flatten(),
                 x0=b.flatten(),  # Initialize with b (result of One-Shot)
                 atol=tol,
-                maxiter=n_iter,
+                maxiter=self.n_iter,
                 callback=callback,
                 **kwargs,
             )
@@ -394,7 +420,7 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
             u_sol = u_flat.reshape((self.nx, L))
 
         else:
-            raise ValueError(f"Unknown solver type: {solver_type}")
+            raise ValueError(f"Unknown solver type: {self.solver_type}")
 
         # --- Finalize ---
         self.beam_history = u_sol

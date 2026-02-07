@@ -54,12 +54,19 @@ def generate_simulation_inputs(
     # Note: Generators expect dx in Microns, but sim_params has Meters. Convert back for generator.
     dx_um = sim_params["dx"] * 1e6
 
-    n_map_fine = gen_func(
-        sim_params["n_total"],
-        sim_params["ground_truth_cfg"]["n_prop_fine"],
-        dx=dx_um,
-        **sim_params["sample_params"],
-    )
+    if gen_func == generate_blob_phantom:
+        n_map_fine = gen_func(
+            sim_params["n_total"],
+            sim_params["ground_truth_cfg"]["n_prop_fine"],
+            **sim_params["sample_params"],
+        )
+    else:
+        n_map_fine = gen_func(
+            sim_params["n_total"],
+            sim_params["ground_truth_cfg"]["n_prop_fine"],
+            dx=dx_um,
+            **sim_params["sample_params"],
+        )
 
     # 2. Probe Field
     logging.info("Generating Probe Field...")
@@ -196,8 +203,6 @@ def run_benchmark_loop(
         # Run each solver in the list
         for s_conf in solvers_list:
             name = s_conf["name"]
-
-            t0 = process_time()
             solver = create_solver(
                 s_conf["type"],
                 s_conf.get("solver_params", {}),
@@ -206,6 +211,7 @@ def run_benchmark_loop(
                 dz_coarse,
                 save_beam=do_save,
             )
+            t0 = process_time()
             solver.run(psi_init=psi_0)
             t_run = process_time() - t0
 
