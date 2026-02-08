@@ -7,7 +7,7 @@ from ptycho_fwd_bench.solvers import (
     FiniteDifferencePadeSolver,
     MultisliceSolver,
     ParallelMultisliceSolver,
-    ParallelMultisliceSolver2,
+    ParallelMultisliceSolver_v2,
     SpectralPadeSolver,
     WaveletMultisliceSolver,
 )
@@ -77,7 +77,7 @@ def create_solver(
             solver_type=solver_params.get("solver_type", "richardson"),
         )
     elif s_type == "PARAMS2":
-        return ParallelMultisliceSolver2(
+        return ParallelMultisliceSolver_v2(
             **common_args,
             alpha=solver_params.get("alpha", 1e-3),
             n_iter=solver_params.get("n_iter", 2),

@@ -8,7 +8,7 @@ from .base import OpticalWaveSolver
 from .utils import get_spectral_coords
 
 
-class ParallelMultisliceSolver2(OpticalWaveSolver):
+class ParallelMultisliceSolver_v2(OpticalWaveSolver):
     """
     Symmetric Parallel-in-Time Multislice Solver.
 
@@ -40,14 +40,18 @@ class ParallelMultisliceSolver2(OpticalWaveSolver):
         self.n_mean = np.mean(self.n_map)
         self.delta_n = self.n_map - self.n_mean
 
+        # Initial operator setup
         self._setup_operators()
 
     def _setup_operators(self):
+        """
+        Sets up the diagonal and off-diagonal operators.
+        Can be called again if dz or n_map changes (e.g. for sub-grid solvers).
+        """
         L = self.nz_steps
         z_idx = np.arange(L)
 
-        # A. Physics Terms (Refraction)
-        # Use complex128 to prevent underflow/overflow with alpha terms
+        # 1. Physics Terms (Refraction)
         N_phase = (1j * self.k0 * self.delta_n * self.dz / 2).astype(np.complex128)
         self._half_obj = np.exp(N_phase)
         self._inv_half_obj = np.exp(-N_phase)
@@ -127,7 +131,6 @@ class ParallelMultisliceSolver2(OpticalWaveSolver):
         v = rhs_vector * self._pre_mul
 
         # 2. Standard 2D FFT (Space X, Time Z)
-        # Note: Ensure axes align with your kernel broadcasting (Nx, L)
         v_k = np.fft.fft2(v, axes=(0, 1))
 
         # 3. Kernel Multiply (Spectral)
@@ -153,14 +156,11 @@ class ParallelMultisliceSolver2(OpticalWaveSolver):
         correction = self._apply_M_inv(err)
         return u + correction
 
-    def run(self, psi_init: Optional[np.ndarray] = None) -> "ParallelMultisliceSolver2":
-        psi_0 = self.initialize_wavefront(psi_init)
+    def _solve_single_pass(self, psi_0: np.ndarray) -> np.ndarray:
+        """Helper to run one solve pass with current dz and operators."""
 
-        # Source S at slice 0
+        # Source S at slice 0 (P applied spectrally later if needed, but here simple injection)
         S = np.zeros((self.nx, self.nz_steps), dtype=np.complex128)
-
-        # Exact first step for Source: psi_0
-        # Note: We apply the P operator in spectral space for accuracy
         S[:, 0] = psi_0
 
         # Initial Guess
@@ -170,13 +170,11 @@ class ParallelMultisliceSolver2(OpticalWaveSolver):
         # Iterative Solver
         if self.n_iter > 0:
             if self.solver_type == "richardson":
-                logging.info(f"Running Richardson (n={self.n_iter})...")
                 for _ in range(self.n_iter):
                     res = b - self._apply_A(u_sol)
                     u_sol += res
 
             elif self.solver_type in ["gmres", "bicgstab"]:
-                logging.info(f"Running {self.solver_type.upper()}...")
 
                 def matvec(u_flat):
                     return self._apply_A(
@@ -195,6 +193,78 @@ class ParallelMultisliceSolver2(OpticalWaveSolver):
                 )
                 u_sol = u_flat.reshape(self.nx, self.nz_steps)
 
-        self.beam_history = u_sol if self.store_beam else None
-        self.psi_final = u_sol[:, -1]
+        return u_sol
+
+    def run(
+        self,
+        psi_init: Optional[np.ndarray] = None,
+        richardson_extrapolation: bool = False,
+    ) -> "ParallelMultisliceSolver_v2":
+        """
+        Runs the solver.
+
+        If richardson_extrapolation is True:
+          1. Solves on coarse grid (dz).
+          2. Solves on fine grid (dz/2).
+          3. Combines solutions: Psi_extrap = (4 * Psi_fine - Psi_coarse) / 3
+        """
+        psi_0 = self.initialize_wavefront(psi_init)
+
+        if not richardson_extrapolation:
+            # Standard single pass
+            logging.info("Running Standard Solver...")
+            u_sol = self._solve_single_pass(psi_0)
+            self.psi_final = u_sol[:, -1]
+            if self.store_beam:
+                self.beam_history = u_sol
+        else:
+            logging.info("Running Richardson Extrapolation...")
+
+            # --- Pass 1: Coarse Grid (Current dz) ---
+            # Save original state
+            orig_dz = self.dz
+            orig_nz = self.nz_steps
+            orig_delta_n = self.delta_n.copy()
+
+            logging.info(f"Pass 1/2: Coarse grid (dz={orig_dz:.3e}, Nz={orig_nz})")
+            u_coarse = self._solve_single_pass(psi_0)
+
+            # Extract result at the end plane
+            psi_coarse_end = u_coarse[:, -1]
+
+            # --- Pass 2: Fine Grid (dz/2) ---
+            # Update parameters for fine grid
+            self.dz = orig_dz / 2.0
+            self.nz_steps = orig_nz * 2
+
+            # Interpolate delta_n to double the z-resolution
+            # Simple nearest neighbor or linear interpolation along axis 1
+            # Here using repeat for "nearest neighbor" equivalent which preserves steps
+            self.delta_n = np.repeat(orig_delta_n, 2, axis=1)
+
+            logging.info(f"Pass 2/2: Fine grid (dz={self.dz:.3e}, Nz={self.nz_steps})")
+
+            # Recompute operators for new dz
+            self._setup_operators()
+
+            u_fine = self._solve_single_pass(psi_0)
+
+            # Extract result at the end plane (which is now index -1 of the doubled array)
+            psi_fine_end = u_fine[:, -1]
+
+            # --- Richardson Combination ---
+            # Formula for 2nd order methods: (4 * fine - coarse) / 3
+            self.psi_final = (4.0 * psi_fine_end - psi_coarse_end) / 3.0
+
+            if self.store_beam:
+                # We can't easily combine the full history due to shape mismatch,
+                # so we store the fine grid history as it's more accurate.
+                self.beam_history = u_fine
+
+            # --- Restore Original State ---
+            self.dz = orig_dz
+            self.nz_steps = orig_nz
+            self.delta_n = orig_delta_n
+            self._setup_operators()  # Restore operators to original state
+
         return self
