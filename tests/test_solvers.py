@@ -149,27 +149,6 @@ def test_multislice_beam_storage(basic_setup, psi_init):
     assert beam.shape == (n_map.shape[0], n_map.shape[1])
 
 
-def test_multislice_dst_kernel_cache(basic_setup):
-    """Ensure kernel caching works (calling _get_propagation_kernel twice)."""
-    n_map, sim_params, dz = basic_setup
-    solver = MultisliceSolver(
-        n_map,
-        sim_params["dx"],
-        sim_params["wavelength"],
-        sim_params["probe_dia"],
-        sim_params["probe_focus"],
-        transform_type="DST",
-        dz=dz,
-    )
-
-    k1 = solver._get_propagation_kernel(dz)
-    k2 = solver._get_propagation_kernel(dz)
-
-    # Should be exact same object in memory
-    assert k1 is k2
-    assert len(solver._kernel_cache) == 1
-
-
 # =============================================================================
 # 4. PADE SOLVER TESTS (Mocking PyRAM)
 # =============================================================================

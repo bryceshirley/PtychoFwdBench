@@ -58,8 +58,8 @@ def mock_config(mock_sim_params):
 
 class TestSimulationInputs:
     # This ensures the code looks up our mock when it checks the dictionary.
-    @patch.dict("ptycho_fwd_bench.benchmarking.GENERATOR_MAP", clear=False)
-    @patch("ptycho_fwd_bench.benchmarking.get_probe_field")
+    @patch.dict("ptycho_fwd_bench.dim_2.benchmarking.GENERATOR_MAP", clear=False)
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.get_probe_field")
     def test_generate_simulation_inputs_success(self, mock_probe, mock_sim_params):
         """Test that inputs are generated using correct parameters."""
 
@@ -89,7 +89,7 @@ class TestSimulationInputs:
 
 
 class TestComputeGroundTruth:
-    @patch("ptycho_fwd_bench.benchmarking.create_solver")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.create_solver")
     def test_compute_ground_truth_flow(self, mock_create, mock_sim_params):
         """Test that the solver is initialized, run, and results extracted."""
 
@@ -135,9 +135,9 @@ class TestComputeGroundTruth:
 
 
 class TestBenchmarkLoop:
-    @patch("ptycho_fwd_bench.benchmarking.plotters")
-    @patch("ptycho_fwd_bench.benchmarking.create_solver")
-    @patch("ptycho_fwd_bench.benchmarking.interpolate_to_coarse")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.plotters")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.create_solver")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.interpolate_to_coarse")
     def test_run_benchmark_loop(
         self, mock_interp, mock_create, mock_plotters, mock_config, mock_sim_params
     ):
@@ -180,12 +180,12 @@ class TestFullBenchmarkOrchestrator:
     # We no longer need to patch builtins.open or yaml.safe_load here
     # because run_full_benchmark now takes the dict directly.
 
-    @patch("ptycho_fwd_bench.benchmarking.parse_simulation_parameters")
-    @patch("ptycho_fwd_bench.benchmarking.validate_sampling_conditions")
-    @patch("ptycho_fwd_bench.benchmarking.generate_simulation_inputs")
-    @patch("ptycho_fwd_bench.benchmarking.compute_ground_truth")
-    @patch("ptycho_fwd_bench.benchmarking.run_benchmark_loop")
-    @patch("ptycho_fwd_bench.benchmarking.save_ground_truth")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.parse_simulation_parameters")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.validate_sampling_conditions")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.generate_simulation_inputs")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.compute_ground_truth")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.run_benchmark_loop")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.save_ground_truth")
     def test_run_full_benchmark_compute_mode(
         self,
         mock_save,
@@ -212,11 +212,11 @@ class TestFullBenchmarkOrchestrator:
         mock_compute.assert_called_once()
         mock_loop.assert_called_once()
 
-    @patch("ptycho_fwd_bench.benchmarking.parse_simulation_parameters")
-    @patch("ptycho_fwd_bench.benchmarking.validate_sampling_conditions")
-    @patch("ptycho_fwd_bench.benchmarking.load_ground_truth")
-    @patch("ptycho_fwd_bench.benchmarking.run_benchmark_loop")
-    @patch("ptycho_fwd_bench.benchmarking.compute_ground_truth")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.parse_simulation_parameters")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.validate_sampling_conditions")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.load_ground_truth")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.run_benchmark_loop")
+    @patch("ptycho_fwd_bench.dim_2.benchmarking.compute_ground_truth")
     def test_run_full_benchmark_load_mode(
         self,
         mock_compute,

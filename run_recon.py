@@ -135,7 +135,7 @@ for epoch in range(n_recon_epochs):
         normalized_grad = grad_n_obj / max_grad
 
         lr_obj *= lr_decay
-        n_map_est -= lr_obj * (-1j * normalized_grad)
+        n_map_est += lr_obj * (-1j * normalized_grad)
 
     if "probe" in RECON_MODE:
         grad_probe = solver.compute_gradient_probe(v_adj_vol)

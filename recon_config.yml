@@ -14,14 +14,14 @@ sample:
   width_um: 150.0
   params:
     n_background: 1.0
-    delta_n: 1e-4          # Scattering strength
-    beta_n: 1e-6           # Absorption
+    delta_n: 1e-3          # Scattering strength
+    beta_n: 1e-4           # Absorption
     n_blobs: 5
 
 probe:
-  wavelength_um: 0.0635
+  wavelength_um: 0.635
   diameter_um: 1.0
-  focus_um: -5.0
+  focus_um: -10.0
 
 # ==========================================
 # 3. Spatial Grid
@@ -47,7 +47,7 @@ forward_model:
   solver_name: "pint"
   params:
     alpha: 1e-8
-    n_iter: 7
+    n_iter: 10
     solver_type: "richardson"
 
 # ==========================================
@@ -55,7 +55,7 @@ forward_model:
 # ==========================================
 reconstruction:
   mode: ["object"]          # Options: "object", "probe", "phase_retrieval"
-  n_probes: 150            # Number of scan positions
+  n_probes: 100            # Number of scan positions
   n_epochs: 15              # Reconstruction epochs
 
   initialization:
@@ -64,6 +64,6 @@ reconstruction:
     random_seed: 0
 
   optimizer:
-    lr_object: 1.0e-06
+    lr_object: 1.0e-05
     lr_probe: 0.5
-    lr_decay: 0.99
+    lr_decay: 0.8

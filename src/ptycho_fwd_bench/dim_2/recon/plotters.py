@@ -4,15 +4,19 @@ import numpy as np
 
 def plot_true_object(n_map, title, filepath):
     fig, axs = plt.subplots(1, 2, figsize=(20, 10))
-    im1 = axs[0].imshow(np.abs(n_map), cmap="inferno", aspect="auto")
+    im1 = axs[0].imshow(np.abs(n_map.T), cmap="inferno", aspect="auto")
     axs[0].set_title(f"{title} (Modulus)")
     axs[0].set_box_aspect(1)
     plt.colorbar(im1, ax=axs[0])
+    axs[0].set_xlabel("X (pixels)")
+    axs[0].set_ylabel("Z (pixels)")
 
-    im2 = axs[1].imshow(np.angle(n_map), cmap="inferno", aspect="auto")
+    im2 = axs[1].imshow(np.angle(n_map.T), cmap="inferno", aspect="auto")
     axs[1].set_title(f"{title} (Phase)")
     axs[1].set_box_aspect(1)
     plt.colorbar(im2, ax=axs[1])
+    axs[1].set_xlabel("X (pixels)")
+    axs[1].set_ylabel("Z (pixels)")
 
     plt.savefig(filepath, bbox_inches="tight")
     plt.close()
@@ -63,11 +67,15 @@ def plot_epoch_object(n_viz, epoch, filepath):
     axs[0].set_title(f"Modulus(n) - Epoch {epoch}")
     axs[0].set_box_aspect(1)
     plt.colorbar(im1, ax=axs[0])
+    axs[0].set_xlabel("X (pixels)")
+    axs[0].set_ylabel("Z (pixels)")
 
     im2 = axs[1].imshow(np.angle(n_viz.T), cmap="inferno", aspect="auto")
     axs[1].set_title(f"Phase(n) - Epoch {epoch}")
     axs[1].set_box_aspect(1)
     plt.colorbar(im2, ax=axs[1])
+    axs[1].set_xlabel("X (pixels)")
+    axs[1].set_ylabel("Z (pixels)")
 
     plt.savefig(filepath, bbox_inches="tight")
     plt.close()

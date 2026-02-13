@@ -17,9 +17,9 @@ from ptycho_fwd_bench.dim_2.utils.utils import (
 )
 
 
-@patch("ptycho_fwd_bench.utils.setup_logging")
-@patch("ptycho_fwd_bench.utils.setup_output_directory")
-@patch("ptycho_fwd_bench.utils.yaml.safe_load")
+@patch("ptycho_fwd_bench.dim_2.utils.utils.setup_logging")
+@patch("ptycho_fwd_bench.dim_2.utils.utils.setup_output_directory")
+@patch("ptycho_fwd_bench.dim_2.utils.utils.yaml.safe_load")
 def test_parse_config_logic(mock_yaml, mock_dir, mock_log):
     """Test that parse_config correctly orchestrates setup."""
 
@@ -87,7 +87,7 @@ def test_setup_output_directory(tmp_path):
     dummy_config = tmp_path / "dummy_config.yaml"
     dummy_config.write_text("experiment: test")
 
-    with mock.patch("ptycho_fwd_bench.utils.datetime") as mock_date:
+    with mock.patch("ptycho_fwd_bench.dim_2.utils.utils.datetime") as mock_date:
         # Freeze time for consistent folder naming
         mock_date.now.return_value.strftime.return_value = "20230101_120000"
 
