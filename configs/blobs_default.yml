@@ -1,16 +1,16 @@
 experiment:
   name: "BLOBS"
-  description: "Standard random soft blobs."
+  description: "Standard random soft blobs High Scatter."
 
 physics:
-  wavelength_um: 0.635
-  probe_dia_um: 10.0
+  wavelength_um: 0.00635
+  probe_dia_um: 1.0
   probe_focus_um: -5.0
 
 grid:
   n_physical: 2048
   n_padding: 512
-  physical_width_um: 150.0
+  physical_width_um: 15.0
 
 sample:
   type: "BLOBS"
@@ -18,70 +18,62 @@ sample:
 
   # Ground Truth Settings (Reference Solution)
   ground_truth:
-    n_prop_fine: 2000      # High-res propagation steps for reference
-    solver_type: "PADE"    # Which algorithm to trust as "truth"
+    n_prop_fine: 8192      # High-res propagation steps for reference
+    solver_type: "MULTISLICE"    # Which algorithm to trust as "truth"
     solver_params:
-      pade_order: 8       # Very high accuracy for reference
+      transform_type: "FFT"
+      symmetric: True
 
-    save_file: "./data/blobs_gt_ref.npz"
+    #save_file: "./data/blobs_gt_ref.npz"
 
     load_file: "./data/blobs_gt_ref.npz"
 
   # Sample Generator Parameters
   params:
     n_background: 1.0
-    delta_n: 0.01         # Scattering strength
-    beta_n: 0.005          # Absorption
+    delta_n: 1e-4         # Scattering strength
+    beta_n: 1e-6          # Absorption
     n_blobs: 50
 
 # Benchmarking List
 # List as many solvers as desired for comparison
 solvers:
-  - name: "Pade (Order 8)"
-    type: "PADE"
-    solver_params:
-      pade_order: 8
-
-  - name: "Pade (Order 4)"
-    type: "PADE"
-    solver_params:
-      pade_order: 4
-
-  - name: "Pade (Order 2)"
-    type: "PADE"
-    solver_params:
-      pade_order: 2
-
-  - name: "Spectral Pade Split Step Precon (Order 4)"
-    type: "SPECTRAL_PADE"
-    solver_params:
-      pade_order: 4
-      max_iter: 4
-      transform_type: "FFT"
-      solver_type: "bicgstab"
-      preconditioner: "split_step"
-
-  - name: "Spectral Pade Symmetric Shifted Precon (Order 4)"
-    type: "SPECTRAL_PADE"
-    solver_params:
-      pade_order: 4
-      max_iter: 4
-      transform_type: "FFT"
-      solver_type: "bicgstab"
-      preconditioner: "symmetric_shifted"
-
-  - name: "Multislice (DST, Symmetric)"
+  - name: "Multislice (FFT, Symmetric)"
     type: "MULTISLICE"
     solver_params:
-      transform_type: "DST"
+      transform_type: "FFT"
       symmetric: True
 
-  - name: "Multislice (DST)"
+  - name: "Multislice (FFT)"
     type: "MULTISLICE"
     solver_params:
-      transform_type: "DST"
+      transform_type: "FFT"
       symmetric: false
 
+  - name: "PINT Multislice"
+    type: "PARAMS"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 4
+      transform_type: "FFT"
+      woodbury: False
+
+  - name: "PARAMS FMG"
+    type: "PARAMS_FMG"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 4
+      woodbury: False
+      coarsening_factor: 2
+
+  - name: "PARAMS MGZ"
+    type: "PARAMS_MGZ"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 4
+      woodbury: False
+      coarsening_factor: 2
+
 benchmark:
-  step_counts: [8, 16, 32, 64]
+  step_counts: [32, 64, 128, 256, 512, 1024, 2048]
   save_beam_idx: 0

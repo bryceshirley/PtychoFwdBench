@@ -1,6 +1,6 @@
 import numpy as np
 
-from ptycho_fwd_bench.utils import get_spectral_coords
+from ptycho_fwd_bench.dim_2.utils.utils import get_spectral_coords
 
 try:
     import cupy as cp

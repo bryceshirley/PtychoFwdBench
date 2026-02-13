@@ -97,11 +97,11 @@ def generate_blob_phantom(
     if rz_range is None:
         rz_range = (max(1, nz // 40), max(2, nz // 15))
 
-    # Defaults: Larger padding (1/6th of dimension)
+    # Defaults: Larger padding (1/4th of dimension)
     if pad_x is None:
-        pad_x = nx // 6
+        pad_x = nx // 4
     if pad_z is None:
-        pad_z = nz // 6
+        pad_z = nz // 4
 
     for _ in range(n_blobs):
         rx = np.random.randint(rx_range[0], rx_range[1] + 1)

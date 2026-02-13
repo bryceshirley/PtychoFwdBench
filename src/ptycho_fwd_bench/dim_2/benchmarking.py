@@ -3,13 +3,12 @@ from time import process_time
 from typing import Any, Dict, Optional, Tuple
 
 # --- PyPlot Imports ---
-import matplotlib.pyplot as plt
 import numpy as np
 
-import ptycho_fwd_bench.plotters as plotters
+import ptycho_fwd_bench.dim_2.utils.plotters as plotters
 
 # --- PyRAM Imports ---
-from ptycho_fwd_bench.generators import (
+from ptycho_fwd_bench.dim_2.generators import (
     generate_blob_phantom,
     generate_branching_phantom,
     generate_fiber_bundle_phantom,
@@ -18,12 +17,12 @@ from ptycho_fwd_bench.generators import (
     get_probe_field,
     interpolate_to_coarse,
 )
-from ptycho_fwd_bench.physics import (
+from ptycho_fwd_bench.dim_2.solver_factory import create_solver
+from ptycho_fwd_bench.dim_2.utils.physics import (
     parse_simulation_parameters,
     validate_sampling_conditions,
 )
-from ptycho_fwd_bench.solver_factory import create_solver
-from ptycho_fwd_bench.utils import (
+from ptycho_fwd_bench.dim_2.utils.utils import (
     load_ground_truth,
     save_ground_truth,
 )
@@ -53,6 +52,16 @@ def generate_simulation_inputs(
 
     # Note: Generators expect dx in Microns, but sim_params has Meters. Convert back for generator.
     dx_um = sim_params["dx"] * 1e6
+
+    if "delta_n" in sim_params["sample_params"]:
+        # Convert to float from string
+        sim_params["sample_params"]["delta_n"] = float(
+            sim_params["sample_params"]["delta_n"]
+        )
+    if "beta_n" in sim_params["sample_params"]:
+        sim_params["sample_params"]["beta_n"] = float(
+            sim_params["sample_params"]["beta_n"]
+        )
 
     if gen_func == generate_blob_phantom:
         n_map_fine = gen_func(
@@ -109,36 +118,9 @@ def compute_ground_truth(
 
     # Extract results (crop padding)
     pad = sim_params["n_pad"]
-    # Assuming 'n_total' is the full grid size including padding?
-    # Usually we crop to 'n_physical' or similar.
-    # Using your existing logic:
     psi_gt = solver.get_exit_wave(n_crop=sim_params["n_total"])[pad:-pad]
 
     beam_field = solver.get_beam_field()
-    if beam_field is not None:
-
-        def plot_wave(u_data, title, filename):
-            plt.figure(figsize=(10, 5))
-            plt.imshow(np.abs(u_data), cmap="magma", aspect="auto", origin="lower")
-            plt.colorbar(label="Wave Amplitude")
-            plt.clim(0, 1.0)
-            plt.title(title)
-            plt.xlabel("Propagation Depth (pixels)")
-            plt.ylabel("Transverse Position (pixels)")
-            plt.tight_layout()
-            plt.savefig(filename, dpi=150)
-            plt.close()
-
-        # --- PLOTTING BLOCK ---
-        try:
-            plot_wave(
-                beam_field, "Ground Truth Propagation", "ground_truth_propagation.png"
-            )
-            logging.info("Saved plot to 'ground_truth_propagation.png'")
-            plt.close()  # Close to free memory
-
-        except Exception as e:
-            logging.warning(f"Could not plot ground truth: {e}")
 
     # Crop padding from the transverse dimension (axis 0)
     beam_field = beam_field[pad:-pad, :]

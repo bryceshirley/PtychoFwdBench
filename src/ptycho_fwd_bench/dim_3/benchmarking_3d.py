@@ -2,8 +2,11 @@ import time
 
 import numpy as np
 
-from ptycho_fwd_bench.generators_3d import generate_3d_blob_phantom, get_2d_airy_probe
-from ptycho_fwd_bench.plotters_3d import plot_comparison, plot_phantom_slices
+from ptycho_fwd_bench.dim_3.generators_3d import (
+    generate_3d_blob_phantom,
+    get_2d_airy_probe,
+)
+from ptycho_fwd_bench.dim_3.plotters_3d import plot_comparison, plot_phantom_slices
 
 # Use cupy for direct GPU memory management in benchmark
 try:
@@ -14,8 +17,8 @@ except ImportError:
     HAS_GPU = False
     cp = None
 
-from ptycho_fwd_bench.solvers_3d.multislice import StandardMultisliceSolver
-from ptycho_fwd_bench.solvers_3d.parallel_multislice import ParallelSTEMSolver
+from ptycho_fwd_bench.dim_3.solvers_3d.multislice import StandardMultisliceSolver
+from ptycho_fwd_bench.dim_3.solvers_3d.parallel_multislice import ParallelSTEMSolver
 
 # =============================================================================
 # BENCHMARK EXECUTION

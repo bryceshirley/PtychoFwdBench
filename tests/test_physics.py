@@ -4,7 +4,7 @@ from typing import Any, Dict
 import numpy as np
 import pytest
 
-from ptycho_fwd_bench.physics import (
+from ptycho_fwd_bench.dim_2.utils.physics import (
     parse_simulation_parameters,
     validate_sampling_conditions,
 )

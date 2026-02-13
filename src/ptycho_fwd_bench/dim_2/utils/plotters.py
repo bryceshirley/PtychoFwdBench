@@ -162,7 +162,7 @@ def plot_beam_propagation(
             vmin=v_min,
             vmax=v_max,
         )
-        ax_gt.set_title("Reference: Ground Truth Amplitude (Fine Padé)")
+        ax_gt.set_title("Reference: Ground Truth Amplitude (Fine Mesh)")
         ax_gt.set_ylabel("X (um)")
         ax_gt.set_xlabel("Z (um)")
         plt.colorbar(im_gt, ax=ax_gt, label="|u|")
@@ -176,7 +176,7 @@ def plot_beam_propagation(
             vmin=v_min_phase,
             vmax=v_max_phase,
         )
-        ax_gt.set_title("Reference: Ground Truth Phase (Fine Padé)")
+        ax_gt.set_title("Reference: Ground Truth Phase (Fine Mesh)")
         ax_gt.set_ylabel("X (um)")
         ax_gt.set_xlabel("Z (um)")
         plt.colorbar(im_gt, ax=ax_gt, label="Phase (rad)")
@@ -242,7 +242,9 @@ def plot_convergence_metrics(
     for name, data in methods_data.items():
         if len(data["err"]) > 0:
             # Assuming dz_values corresponds to iterations (smaller dz = more iterations)
-            ax1.loglog(dz_values, data["err"], data["style"], label=name)
+            ax1.loglog(
+                dz_values, data["err"][: len(dz_values)], data["style"], label=name
+            )
 
     ax1.set_xlabel(r"Step Size $\Delta z$ (m)")
     ax1.set_ylabel("Relative Error")

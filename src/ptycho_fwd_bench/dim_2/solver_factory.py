@@ -2,12 +2,14 @@ from typing import Any, Dict
 
 import numpy as np
 
-from ptycho_fwd_bench.solvers import (
+from ptycho_fwd_bench.dim_2.solvers import (
     ExactParallelSolver,
     FiniteDifferencePadeSolver,
     MultisliceSolver,
     ParallelMultisliceSolver,
-    ParallelMultisliceSolver_v2,
+    ParallelMultisliceSolver_FMG,
+    ParallelMultisliceSolver_MGZ,
+    SpectralCrankNicolsonSolver,
     SpectralPadeSolver,
     WaveletMultisliceSolver,
 )
@@ -53,11 +55,11 @@ def create_solver(
         return SpectralPadeSolver(
             **common_args,
             pade_order=solver_params.get("pade_order", 8),
-            max_iter=solver_params.get("max_iter", 4),
+            n_iter=solver_params.get("n_iter", 4),
             envelope=solver_params.get("envelope", False),
             mode=solver_params.get("mode", "spectral"),
             transform_type=solver_params.get("transform_type", "FFT"),
-            solver_type=solver_params.get("solver_type", "bicgstab"),
+            solver_type=solver_params.get("solver_type", "richardson"),
             preconditioner=solver_params.get("preconditioner", "split_step"),
         )
 
@@ -66,7 +68,6 @@ def create_solver(
             **common_args,
             symmetric=solver_params.get("symmetric", True),
             transform_type=solver_params.get("transform_type", "FFT"),
-            use_richardson=solver_params.get("use_richardson", False),
         )
 
     elif s_type == "PARAMS":
@@ -74,14 +75,25 @@ def create_solver(
             **common_args,
             alpha=solver_params.get("alpha", 1e-3),
             n_iter=solver_params.get("n_iter", 2),
-            solver_type=solver_params.get("solver_type", "richardson"),
+            woodbury=solver_params.get("woodbury", True),
         )
-    elif s_type == "PARAMS2":
-        return ParallelMultisliceSolver_v2(
+
+    elif s_type == "PARAMS_FMG":
+        return ParallelMultisliceSolver_FMG(
             **common_args,
-            alpha=solver_params.get("alpha", 1e-3),
-            n_iter=solver_params.get("n_iter", 2),
-            solver_type=solver_params.get("solver_type", "richardson"),
+            n_iter=solver_params.get("n_iter", 4),
+            alpha=solver_params.get("alpha", 1e-6),
+            woodbury=solver_params.get("woodbury", True),
+            coarsening_factor=solver_params.get("coarsening_factor", 2),
+        )
+
+    elif s_type == "PARAMS_MGZ":
+        return ParallelMultisliceSolver_MGZ(
+            **common_args,
+            n_iter=solver_params.get("n_iter", 4),
+            alpha=solver_params.get("alpha", 1e-6),
+            woodbury=solver_params.get("woodbury", True),
+            coarsening_factor=solver_params.get("coarsening_factor", 2),
         )
 
     elif s_type == "WAVELET_MULTISLICE":
@@ -100,6 +112,14 @@ def create_solver(
             alpha=solver_params.get("alpha", 1e-6),
             n_iter=solver_params.get("n_iter", 2),
             solver_type=solver_params.get("solver_type", "gmres"),
+        )
+
+    elif s_type == "SPECTRAL_CN":
+        return SpectralCrankNicolsonSolver(
+            **common_args,
+            n_iter=solver_params.get("n_iter", 4),
+            method=solver_params.get("method", "PARAXIAL"),
+            use_extrapolation=solver_params.get("use_extrapolation", False),
         )
 
     else:

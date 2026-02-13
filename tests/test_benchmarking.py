@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-import ptycho_fwd_bench.benchmarking as benchmarking
+import ptycho_fwd_bench.dim_2.benchmarking as benchmarking
 
 # =============================================================================
 # FIXTURES (Standard Setup Data)

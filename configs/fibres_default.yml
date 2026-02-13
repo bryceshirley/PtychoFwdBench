@@ -18,32 +18,74 @@ sample:
 
   # Ground Truth Settings (Reference Solution)
   ground_truth:
-    n_prop_fine: 2000      # High-res propagation steps for reference
-    solver_type: "PADE"    # Which algorithm to trust as "truth"
+    n_prop_fine: 2024      # High-res propagation steps for reference
+    solver_type: "MULTISLICE"    # Which algorithm to trust as "truth"
     solver_params:
-      pade_order: 8       # Very high accuracy for reference
+      transform_type: "FFT"
+      symmetric: True
 
-    save_file: "./data/fibres_gt_ref.npz"
+    save_file: "./data/blobs_gt_ref.npz"
+
+    #load_file: "./data/blobs_gt_ref.npz"
 
   params:
     n_background: 1.33
-    delta_n: 0.03
-    beta_n: 0.01
+    delta_n: 1e-3
+    beta_n: 1e-6
     fiber_rad_um: 1.0
     density: 0.6
     waviness_um: 1.2
 
 solvers:
-  - name: "Pade (Order 8)" # Arbitrary Name
-    type: "PADE"
-    solver_params:
-      pade_order: 8
-
-  - name: "Multislice (DST)"
+  - name: "Multislice (FFT, Symmetric)"
     type: "MULTISLICE"
     solver_params:
-      transform_type: "DST"
+      transform_type: "FFT"
+      symmetric: True
+
+  - name: "Multislice (FFT)"
+    type: "MULTISLICE"
+    solver_params:
+      transform_type: "FFT"
       symmetric: false
+
+  - name: " PINT Multislice v2"
+    type: "PARAMS2"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 10
+      solver_type: "GMRES"
+      transform_type: "FFT"
+
+  - name: "PINT Multislice v3"
+    type: "PARAMS3"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 10
+      transform_type: "FFT"
+      woodbury: False
+
+  - name: "PINT Multislice FMG"
+    type: "PINT_FMG"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 10
+      woodbury: False
+
+  - name: "PINT Multislice FMG Z-Only"
+    type: "PINT_FMG_ZONLY"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 10
+      woodbury: False
+
+  - name: "PINT Multislice FMG Z-Only 2"
+    type: "PINT_FMG_ZONLY2"
+    solver_params:
+      alpha: 1e-8
+      n_iter: 10
+      woodbury: False
+      coarsening_factor: 2
 
 benchmark:
   step_counts: [64, 128, 256]

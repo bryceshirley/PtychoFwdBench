@@ -1,8 +1,11 @@
 import logging
+from typing import Optional
 
 import numpy as np
+from scipy.sparse.linalg import LinearOperator, gmres
 
-# Assuming these exist in your utils/generators
+from ptycho_fwd_bench.dim_2.generators import get_probe_field
+
 from .utils import get_spectral_coords
 
 
@@ -17,11 +20,14 @@ class ParallelMultisliceSolverBatched:
         dx: float,
         wavelength: float,
         dz: float,
-        nx: int,  # Window Size (local x)
-        nz_steps: int,  # Depth Steps (local z)
-        probe_dia: float = 50e-9,
+        nx: int,  # Window Size
+        nz_steps: int,  # Depth Steps
+        probe_dia: float,
         probe_focus: float = 0,
         alpha: float = 1e-6,
+        solver_type: str = "richardson",
+        n_iter: int = 1,
+        **kwargs,
     ):
         self.dx = dx
         self.dz = dz
@@ -31,33 +37,26 @@ class ParallelMultisliceSolverBatched:
         self.probe_dia = probe_dia
         self.probe_focus = probe_focus
         self.total_width = self.nx * self.dx
-
+        self.solver_type = solver_type
+        self.n_iter = n_iter
         self.k0 = 2 * np.pi / wavelength
         self.k0sq = self.k0**2
         self.alpha = float(alpha)
-
-        # Initialize global map placeholders
-        self.n_mean = 1.0
-        self.delta_n_global = None
-
         logging.info("Initializing spectral physics engine...")
 
     def setup_solver(self, n_map: np.ndarray):
-        """
-        Sets up the global refractive index map.
-        n_map shape should be (Global_Nx, Nz) for 2D ptycho.
-        """
+        """Sets up the global refractive index map, ensuring it is 2D."""
         n_map_squeezed = np.squeeze(n_map)
 
         if n_map_squeezed.ndim != 2:
             raise ValueError(
-                f"n_map must be 2D (Global_Nx, Nz). Got shape {n_map.shape}"
+                f"n_map must be 2D after squeezing. Got shape {n_map.shape}"
             )
 
         self.n_mean = np.mean(n_map_squeezed)
         self.delta_n_global = n_map_squeezed - self.n_mean
 
-        # Precompute the spectral kernel (Depends only on grid, not object)
+        # Kernel is computed based on window size nx
         self.K_3d = self._get_3d_kernel()
 
     def _get_3d_kernel(self) -> np.ndarray:
@@ -71,8 +70,10 @@ class ParallelMultisliceSolverBatched:
         inside = self.k0sq - kx**2
         sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
 
-        # Phase advance per dz
+        # lambda_vac: vacuum phase advance per dz
         lambda_vac = 1j * (sqrt_term - self.k0)
+
+        # phi_mean: mean potential phase advance per dz
         phi_mean = 1j * self.k0 * (self.n_mean - 1.0)
 
         # P_shifted = exp(Lambda_bar * dz)
@@ -93,8 +94,7 @@ class ParallelMultisliceSolverBatched:
         denom = 1.0 - (lam_alpha * self._P_shifted)
 
         # Expand dims to (1, Nx, Nz) for batch broadcasting
-        K = self._P_shifted / (denom + 1e-15)
-        return K[np.newaxis, :, :]
+        return self._P_shifted / (denom + 1e-15)
 
     def _setup_batch_operators(self, scan_indices: np.ndarray):
         """
@@ -145,17 +145,11 @@ class ParallelMultisliceSolverBatched:
 
     def _apply_M_inv(self, rhs_batch: np.ndarray) -> np.ndarray:
         """Forward Preconditioner: (Untwist+Refract) -> IFFT -> K -> FFT -> (Refract+Twist)"""
-        # Note: Your original code had FFT/IFFT swapped relative to standard definitions,
-        # or relative to my previous explanation.
-        # Standard spectral solvers usually do: IFFT_z( K * FFT_z( u ) )
-        # Here we follow the logic: Input is x-z space. Transform to x-k_z.
 
         # 1. Entry Multiplier
         v = rhs_batch * self._pre_mul
 
         # 2. FFT along Z (axis 2) to get spectral z
-        #    We usually keep X in real space (or spectral x), but K_3d handles x spectrally?
-        #    Wait, K_3d was computed with kx. So we need FFT along X (axis 1) too.
         v_k = np.fft.fft2(v, axes=(1, 2))
 
         # 3. Kernel Multiply
@@ -175,20 +169,6 @@ class ParallelMultisliceSolverBatched:
         # 1. Apply conjugate of Post-multiplier (Exit becomes Entry)
         v = rhs_batch * np.conj(self._post_mul)
 
-        # 2. FFT (Forward FFT is unitary-ish, adjoint is IFFT-ish, but if we use
-        #    fft2/ifft2 pairs, we just swap them or use conj).
-        #    Mathematical Adjoint of (F K F^-1) is (F^-H K^H F^H).
-        #    Since F is unitary (up to scale), F^H = F^-1.
-        #    So Adjoint is: F^-1 [ conj(K) * F [ v ] ]
-        #    Wait! The forward was: v_out = Post * F^-1 * (K * F * (Pre * v_in))
-        #    Adjoint: v_adj = Pre^H * F^H * (K^H * F^-H * (Post^H * v_in))
-        #    F^H is IFFT (scaled). F^-H is FFT.
-
-        # Correct Adjoint Sequence:
-
-        # A. Conjugate Post-Multiply
-        # v is now (Post^H * v_in)
-
         # B. FFT (Inverse of IFFT step in forward)
         v_k = np.fft.fft2(v, axes=(1, 2))
 
@@ -201,93 +181,68 @@ class ParallelMultisliceSolverBatched:
         # E. Conjugate Pre-Multiply
         return v * np.conj(self._pre_mul)
 
-    def _apply_Error(self, u_batch: np.ndarray) -> np.ndarray:
-        """Computes E * u"""
+    def _apply_A(self, u_batch: np.ndarray) -> np.ndarray:
+        """Applies A = I + M^-1 * E"""
         # E1 acts on u_{j-1} (shift z by +1)
         u_prev = np.roll(u_batch, 1, axis=2)
         err = self._E1_coeff * u_prev
 
-        # Zero out the wrap-around from roll (slice 0 shouldn't get slice L-1 via E1)
-        # But E1 is strictly sub-diagonal, so row 0 is 0.
+        # Zero out the wrap-around from roll (since E1 is strictly sub-diagonal)
         err[:, :, 0] = 0.0
 
         # E2 acts on u_{L-1} and adds to slice 0
         err[:, :, 0] += self._E2_coeff * u_batch[:, :, -1]
 
-        return err
+        return u_batch + self._apply_M_inv(err)
 
-    def _apply_Error_adjoint(self, v_batch: np.ndarray) -> np.ndarray:
+    def _apply_A_adjoint(self, v_batch: np.ndarray) -> np.ndarray:
         """
-        Computes E^H * v.
-        E1 is Lower Diagonal -> E1^H is Upper Diagonal.
-        E2 is Bottom-Left Corner -> E2^H is Top-Right Corner.
+        Computes A^H v = v + M^-H E^H v
+         where E^H has E1^H (super-diagonal) and E2^H (corner).
         """
         # 1. E1^H: Acts on v_{j+1}. So we roll -1 (shift left)
-        #    err_j = conj(E1_{j+1}) * v_{j+1}
-
-        # Use roll -1 to bring v_{j+1} to pos j
         v_next = np.roll(v_batch, -1, axis=2)
-
-        # We need the coeff at j+1 aligned with v_{j+1}.
-        # E1_coeff stored at 'j' corresponds to interaction (j, j-1).
-        # We need interaction (j+1, j).
-        # So we align conj(E1) shifted by -1.
         E1_conj_shifted = np.roll(np.conj(self._E1_coeff), -1, axis=2)
-
         err = E1_conj_shifted * v_next
 
         # The last slice (L-1) shouldn't get input from slice 0 via E1 (boundary)
         err[:, :, -1] = 0.0
 
         # 2. E2^H: Acts on v_0 and adds to slice L-1
-        #    (Corner element (0, L-1) transposed is (L-1, 0))
         err[:, :, -1] += np.conj(self._E2_coeff) * v_batch[:, :, 0]
 
-        return err
+        return v_batch + self._apply_M_inv_adjoint(err)
 
     def compute_gradient_object(
         self, u_sol: np.ndarray, v_sol: np.ndarray, scan_indices: np.ndarray
     ):
         """Assembles complex gradient components via scatter-add."""
-        # u * v_conj
+        # 1. Compute the raw overlap term: X = u * v*
+        # This contains both Phase info (in Imag part) and Absorp info (in Real part)
         local_overlap = u_sol * np.conj(v_sol)
 
-        # Flatten logic for safe accumulation
-        B, Nx, Nz = local_overlap.shape
+        batch_offsets = scan_indices[:, np.newaxis]
+        window_indices = np.arange(self.nx)
+        gather_indices = batch_offsets + window_indices
 
-        # Create flat indices for the global map rows
-        # batch_offsets: (B, 1) -> (B, Nx)
-        global_x_indices = scan_indices[:, np.newaxis] + np.arange(Nx)[np.newaxis, :]
-        flat_indices = global_x_indices.ravel()  # Size B*Nx
+        # Initialize complex global gradient container
+        global_grad_overlap = np.zeros_like(self.delta_n_global, dtype=np.complex128)
 
-        # Reshape overlap to (B*Nx, Nz)
-        flat_overlap = local_overlap.reshape(B * Nx, Nz)
+        # Accumulate the raw overlap
+        np.add.at(global_grad_overlap, (gather_indices, slice(None)), local_overlap)
 
-        # Initialize container
-        global_grad = np.zeros_like(self.delta_n_global, dtype=np.complex128)
+        return global_grad_overlap
 
-        # Add safely
-        np.add.at(global_grad, flat_indices, flat_overlap)
-
-        return global_grad
-
-    def compute_gradient_probe(self, v_sol: np.ndarray):
-        """
-        Computes gradient for the probe at z=0.
-        Gradient = Sum_over_batch( v_adjoint(z=0) )
-        """
-        # v_sol: (Batch, Nx, Nz)
-        # Take z=0 slice -> (Batch, Nx)
-        # Sum over Batch -> (Nx,)
-        probe_grad = np.sum(v_sol[:, :, 0], axis=0)
-        return probe_grad
+    def compute_gradient_probe(self, v_sol: np.ndarray) -> np.ndarray:
+        """Computes the probe gradient by integrating the adjoint field at the source plane."""
+        # Extract the adjoint field at the source plane (first slice)
+        return np.mean(v_sol[:, :, 0], axis=0)
 
     def run_ptycho_batch(
         self,
         psi_init_batch: np.ndarray,
         scan_indices: np.ndarray,
         n_map: np.ndarray,
-        n_iter: int = 5,
         mode: str = "forward",
     ) -> np.ndarray:
         """
@@ -302,32 +257,58 @@ class ParallelMultisliceSolverBatched:
         S = np.zeros((B, self.nx, self.nz_steps), dtype=np.complex128)
 
         if mode == "adjoint":
-            # Adjoint Source: Residual at detector (z=End)
+            # In adjoint mode, the "initial" wave is the residual at the DETECTOR (last slice)
             S[:, :, -1] = psi_init_batch
-            # Invert: Adjoint Solve
-            b = self._apply_M_inv_adjoint(S)
-            u_sol = b.copy()
-
-            for _ in range(n_iter):
-                # Apply (I + M^-H E^H)
-                # Res = b - (I + M^-H E^H) u
-                correction_term = self._apply_M_inv_adjoint(
-                    self._apply_Error_adjoint(u_sol)
-                )
-                A_u = u_sol + correction_term
-                u_sol += b - A_u
-
         else:
-            # Forward Source: Probe at entrance (z=0)
+            # In forward mode, the initial wave is the probe at the SOURCE (first slice)
             S[:, :, 0] = psi_init_batch
-            # Invert: Forward Solve
-            b = self._apply_M_inv(S)
-            u_sol = b.copy()
 
-            for _ in range(n_iter):
-                # Apply (I + M^-1 E)
-                correction_term = self._apply_M_inv(self._apply_Error(u_sol))
-                A_u = u_sol + correction_term
-                u_sol += b - A_u
+        # Apply the Preconditioner (M_inv) to get the initial guess 'b'
+        b = self._apply_M_inv_adjoint(S) if mode == "adjoint" else self._apply_M_inv(S)
+        u_sol = b.copy()
+
+        # Richardson Iteration / Iterative Refinement
+        if self.n_iter > 0:
+            if self.solver_type == "richardson":
+                for _ in range(self.n_iter):
+                    res = b - (
+                        self._apply_A_adjoint(u_sol)
+                        if mode == "adjoint"
+                        else self._apply_A(u_sol)
+                    )
+                    u_sol += res
+            elif self.solver_type in ["gmres"]:
+
+                def matvec(u_flat):
+                    u_reshaped = u_flat.reshape(self.nx, self.nz_steps)
+                    return (
+                        self._apply_A_adjoint(u_reshaped)
+                        if mode == "adjoint"
+                        else self._apply_A(u_reshaped)
+                    ).flatten()
+
+                A_op = LinearOperator(
+                    (self.nx * self.nz_steps, self.nx * self.nz_steps),
+                    matvec=matvec,
+                    dtype=np.complex128,
+                )
+
+                u_flat, _ = gmres(
+                    A_op, b.flatten(), x0=b.flatten(), maxiter=self.n_iter
+                )
+                u_sol = u_flat.reshape(self.nx, self.nz_steps)
 
         return u_sol
+
+    def initialize_wavefront(self, psi_init: Optional[np.ndarray]) -> np.ndarray:
+        if psi_init is not None:
+            return psi_init.astype(complex)
+        x_coords = np.arange(self.nx) * self.dx
+        psi = get_probe_field(
+            x_coords,
+            self.total_width / 2.0,
+            self.probe_dia,
+            self.probe_focus,
+            self.wavelength,
+        )
+        return psi.astype(complex)

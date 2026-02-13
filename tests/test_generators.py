@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ptycho_fwd_bench.generators import (
+from ptycho_fwd_bench.dim_2.generators.generators import (
     generate_blob_phantom,
     generate_branching_phantom,
     generate_empty_phantom,

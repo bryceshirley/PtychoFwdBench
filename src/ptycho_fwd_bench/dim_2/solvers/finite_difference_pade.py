@@ -2,7 +2,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from ptycho_fwd_bench.pyram.PyRAM import PyRAM
+from ptycho_fwd_bench.dim_2.solvers.pyram.PyRAM import PyRAM
 
 from .base import OpticalWaveSolver
 

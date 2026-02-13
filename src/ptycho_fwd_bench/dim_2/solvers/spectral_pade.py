@@ -3,7 +3,7 @@ import logging
 import numpy as np
 from scipy.sparse.linalg import LinearOperator, bicgstab, gmres
 
-from ptycho_fwd_bench.sssp.pade import pade_coefficients
+from ptycho_fwd_bench.dim_2.solvers.sssp.pade import pade_coefficients
 
 from .base import OpticalWaveSolver
 from .utils import apply_spectral_kernel, get_spectral_coords
@@ -33,7 +33,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         Order of the Pade approximation.
     transform_type : str, optional
         Type of spectral transform ("DST" or "FFT").
-    max_iter : int, optional
+    n_iter : int, optional
         Maximum iterations for Richardson solver.
     store_beam : bool, optional
         Whether to store beam history.
@@ -59,7 +59,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         probe_focus: float = 0,
         pade_order: int = 4,
         transform_type: str = "DST",
-        max_iter: int = 2,
+        n_iter: int = 2,
         store_beam: bool = False,
         envelope: bool = False,
         mode: str = "spectral",
@@ -69,7 +69,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
     ):
         super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
         self.pade_order = pade_order
-        self.max_iter = max_iter
+        self.n_iter = n_iter
         self.transform_type = transform_type
         self.preconditioner = preconditioner
         self.solver_type = solver_type
@@ -128,7 +128,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         self.psi_final = psi
 
         # Log aggregated statistics
-        if self.solver_stats and self._solver_stats["iters"]:
+        if self._solver_stats and self._solver_stats["iters"]:
             avg_iter = np.mean(self._solver_stats["iters"])
             avg_resid = np.mean(self._solver_stats["residuals"])
             logger.info(
@@ -287,7 +287,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
                 x0=x0,
                 M=M_op,
                 rtol=rtol,
-                maxiter=self.max_iter,
+                maxiter=self.n_iter,
                 callback=callback,
             )
         elif self.solver_type == "gmres":
@@ -297,7 +297,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
                 x0=x0,
                 M=M_op,
                 rtol=rtol,
-                maxiter=self.max_iter,
+                maxiter=self.n_iter,
                 callback=callback,
             )
         else:
@@ -305,7 +305,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         # 5. Stats
         # Calculate residual manually to verify
-        if self.solver_stats:
+        if self._solver_stats:
             final_residual_vec = b_vec - A_op.matvec(w_flat)
             final_rel_resid = np.linalg.norm(final_residual_vec) / np.linalg.norm(b_vec)
 

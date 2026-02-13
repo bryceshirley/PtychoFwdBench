@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml",
     "tqdm>=4.67.1",
     "pywavelets>=1.6.0",
+    "ipykernel>=6.31.0",
 ]
 
 [build-system]

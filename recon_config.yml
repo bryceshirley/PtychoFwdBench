@@ -1,0 +1,69 @@
+# ==========================================
+# 1. Global Setup
+# ==========================================
+experiment:
+  name: "blob_reconstruction"
+  description: "Standard random soft blobs to reconstruct."
+
+# ==========================================
+# 2. The Physical World
+# ==========================================
+sample:
+  type: "BLOBS"
+  thickness_um: 150.0
+  width_um: 150.0
+  params:
+    n_background: 1.0
+    delta_n: 1e-4          # Scattering strength
+    beta_n: 1e-6           # Absorption
+    n_blobs: 5
+
+probe:
+  wavelength_um: 0.0635
+  diameter_um: 1.0
+  focus_um: -5.0
+
+# ==========================================
+# 3. Spatial Grid
+# ==========================================
+grid:
+  global_nx: 4096          # Total FOV (Pixels)
+  window_nx: 1248           # Sub-window size for the probe
+  window_padding_nx: 32    # Absorbing boundary pad
+
+# ==========================================
+# 4. Ground Truth (Synthetic Data Generation)
+# ==========================================
+ground_truth:
+  fine_nz: 100            # High-res steps for the "true" physics
+  load_path: null          # e.g., "data/gt_blobs.npz" (set to null to compute on the fly)
+  save_path: null          # e.g., "data/gt_blobs.npz" (set to null to skip saving)
+
+# ==========================================
+# 5. Forward Model
+# ==========================================
+forward_model:
+  coarse_nz: 20            # Low-res Z-steps used by the reconstruction solver
+  solver_name: "pint"
+  params:
+    alpha: 1e-8
+    n_iter: 7
+    solver_type: "richardson"
+
+# ==========================================
+# 6. Inverse Problem
+# ==========================================
+reconstruction:
+  mode: ["object"]          # Options: "object", "probe", "phase_retrieval"
+  n_probes: 150            # Number of scan positions
+  n_epochs: 15              # Reconstruction epochs
+
+  initialization:
+    probe_mode: "zeros"    # Options: "ones", "gaussian", "random", "zeros", "cauchy"
+    object_mode: "free-space" # Options: "free-space", "random"
+    random_seed: 0
+
+  optimizer:
+    lr_object: 1.0e-06
+    lr_probe: 0.5
+    lr_decay: 0.99

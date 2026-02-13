@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from ptycho_fwd_bench.solver_factory import create_solver
-from ptycho_fwd_bench.solvers import FiniteDifferencePadeSolver, MultisliceSolver
+from ptycho_fwd_bench.dim_2.solver_factory import create_solver
+from ptycho_fwd_bench.dim_2.solvers import FiniteDifferencePadeSolver, MultisliceSolver
 
 # =============================================================================
 # 1. FIXTURES & MOCKS

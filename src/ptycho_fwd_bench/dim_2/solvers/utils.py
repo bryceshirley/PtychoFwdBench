@@ -2,6 +2,37 @@ import numpy as np
 from scipy.fftpack import dct, dst, idct, idst
 
 
+def get_prop_kernel_perp(
+    k0: float, kx: np.ndarray, dz: float, n_mean: float = 1.0
+) -> np.ndarray:
+    """
+    Computes the spectral propagation kernel for a given slice thickness dz.
+
+    Parameters
+    ----------
+    k0 : float
+        Free-space wavenumber.
+    kx : np.ndarray
+        Spectral coordinates in the transverse direction.
+    dz : float
+        Thickness of the slice to propagate through.
+    n_mean : float, optional
+        Mean refractive index of the medium (default is 1.0).
+
+    Returns
+    -------
+    np.ndarray
+        The spectral propagation kernel H(kx) = exp(i * sqrt(k0^2 - kx^2) * dz).
+    """
+    # Transverse Propagator P
+    inside = k0**2 - kx**2
+    sqrt_term = np.sqrt(np.clip(inside, 0.0, None))
+    lambda_vac = 1j * (sqrt_term - k0)
+    phi_mean = 1j * k0 * (n_mean - 1.0)
+
+    return np.exp((lambda_vac + phi_mean) * dz).astype(np.complex128)
+
+
 def get_spectral_coords(
     nx: int, dx: float, transform_type: str, mode: str = "spectral"
 ) -> np.ndarray:

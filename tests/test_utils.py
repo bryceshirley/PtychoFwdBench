@@ -7,7 +7,7 @@ from unittest.mock import mock_open, patch
 import numpy as np
 import pytest
 
-from ptycho_fwd_bench.utils import (
+from ptycho_fwd_bench.dim_2.utils.utils import (
     get_git_revision_hash,
     load_ground_truth,
     parse_config,

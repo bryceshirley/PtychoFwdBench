@@ -8,7 +8,7 @@ except ImportError:
     cp = None
     HAS_GPU = False
 
-from ptycho_fwd_bench.utils import get_spectral_coords
+from ptycho_fwd_bench.dim_2.utils.utils import get_spectral_coords
 
 
 class ParallelSTEMSolver:
