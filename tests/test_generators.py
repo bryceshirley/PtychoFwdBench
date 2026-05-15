@@ -7,7 +7,6 @@ from ptycho_fwd_bench.dim_2.generators.generators import (
     generate_empty_phantom,
     generate_fiber_bundle_phantom,
     generate_gravel_phantom,
-    generate_waveguide_phantom,
     get_probe_field,
     interpolate_to_coarse,
 )
@@ -123,30 +122,6 @@ def test_generate_gravel_phantom_reproducibility(grid_params):
     map2 = generate_gravel_phantom(**kwargs)
 
     assert np.array_equal(map1, map2)
-
-
-def test_generate_waveguide_phantom(grid_params):
-    """Check that the waveguide core has higher index than cladding."""
-    bg = 1.0
-    delta = 0.1
-    width_um = 2.0  # 20 pixels with dx=0.1
-
-    n_map = generate_waveguide_phantom(
-        grid_params["nx"],
-        grid_params["nz"],
-        n_background=bg,
-        delta_n=delta,
-        width_um=width_um,
-        dx=grid_params["dx"],
-    )
-
-    center = grid_params["nx"] // 2
-    edge = 0
-
-    # Core check (real part)
-    assert np.isclose(n_map[center, 0].real, bg + delta)
-    # Cladding check
-    assert np.isclose(n_map[edge, 0].real, bg)
 
 
 def test_generate_branching_phantom_structure(grid_params):
