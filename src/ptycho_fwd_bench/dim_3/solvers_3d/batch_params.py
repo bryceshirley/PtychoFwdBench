@@ -4,6 +4,10 @@ from typing import Optional
 import numpy as np
 from scipy.sparse.linalg import LinearOperator, gmres
 
+# Updated import based on your requirements
+from ptycho_fwd_bench.dim_2.solvers.utils import get_spectral_coords
+from ptycho_fwd_bench.dim_3.generators_3d import get_2d_airy_probe
+
 # Try importing CuPy for GPU acceleration
 try:
     import cupy as cp
@@ -14,9 +18,8 @@ except ImportError:
     cp = None
     HAS_GPU = False
 
-# Updated import based on your requirements
-from ptycho_fwd_bench.dim_2.utils.utils import get_spectral_coords
-from ptycho_fwd_bench.dim_3.generators_3d import get_2d_airy_probe
+# Setup module-level logger
+logger = logging.getLogger(__name__)
 
 
 class ParallelMultisliceSolverBatched_3D:
@@ -64,31 +67,39 @@ class ParallelMultisliceSolverBatched_3D:
         if use_gpu and HAS_GPU:
             self.use_gpu = True
             self.xp = cp
-            logging.info("ParallelMultisliceSolver: Using GPU (CuPy).")
+            logger.info("ParallelMultisliceSolver_3D initialized: Using GPU (CuPy).")
         else:
             self.use_gpu = False
             self.xp = np
             if use_gpu and not HAS_GPU:
-                logging.warning("CuPy not found. Falling back to CPU (NumPy).")
+                logger.warning("CuPy not found. Falling back to CPU (NumPy).")
             else:
-                logging.info("ParallelMultisliceSolver: Using CPU (NumPy).")
+                logger.info(
+                    "ParallelMultisliceSolver_3D initialized: Using CPU (NumPy)."
+                )
 
-        logging.info("Initializing 3D spectral physics engine...")
+        logger.debug(
+            f"Grid setup: Window=({ny}x{nx}), Z-Steps={nz_steps}, dx={dx:.4f}, dz={dz:.4f}"
+        )
 
     def setup_solver(self, n_map: np.ndarray):
         """
         Sets up the global refractive index map.
         n_map: 3D array (Global_Ny, Global_Nx, Nz)
         """
+        logger.debug(f"Setting up global refractive index map. Shape: {n_map.shape}")
         # Ensure input is on the correct device
         if self.use_gpu and not isinstance(n_map, self.xp.ndarray):
+            logger.debug("Moving n_map to GPU...")
             n_map = self.xp.asarray(n_map)
 
         if n_map.ndim != 3:
+            logger.error(f"Invalid n_map shape: {n_map.shape}. Must be 3D.")
             raise ValueError(f"n_map must be 3D (Ny, Nx, Nz). Got shape {n_map.shape}")
 
         self.n_mean = self.xp.mean(n_map)
         self.delta_n_global = n_map - self.n_mean
+        logger.debug(f"Calculated mean refractive index: {self.n_mean:.6e}")
 
         # Kernel is computed based on window size (ny, nx)
         # Shape: (1, Ny, Nx, Nz)
@@ -99,6 +110,7 @@ class ParallelMultisliceSolverBatched_3D:
         Computes the spectral propagator K for 3D propagation.
         Shape: (Ny, Nx, Nz) broadcastable to (Batch, Ny, Nx, Nz).
         """
+        logger.debug("Computing 4D Spectral Kernel...")
         # 1. Get Spectral Coordinates (on CPU first to use utils, then move)
         kx_cpu = get_spectral_coords(self.nx, self.dx, "FFT")
         ky_cpu = get_spectral_coords(self.ny, self.dy, "FFT")
@@ -139,14 +151,20 @@ class ParallelMultisliceSolverBatched_3D:
         # Broadcasting: (Ny, Nx, 1) and (1, 1, Nz) -> (Ny, Nx, Nz)
         denom = 1.0 - (lam_alpha * self._P_shifted)
 
-        # Expand dims to (1, Ny, Nx, Nz) for batch broadcasting
-        return (self._P_shifted / (denom + 1e-15))[self.xp.newaxis, ...]
+        kernel = (self._P_shifted / (denom + 1e-15))[self.xp.newaxis, ...]
+        logger.debug(
+            f"4D Spectral Kernel generated. Memory footprint: {kernel.nbytes / (1024**2):.2f} MB"
+        )
+        return kernel
 
     def _setup_batch_operators(self, scan_indices: np.ndarray):
         """
         Prepares the local object slices and twist operators for the batch.
         scan_indices: (Batch, 2) integers indicating [y_start, x_start].
         """
+        logger.debug(
+            f"Setting up operators for batch of {scan_indices.shape[0]} positions."
+        )
         if self.use_gpu and not isinstance(scan_indices, self.xp.ndarray):
             scan_indices = self.xp.asarray(scan_indices)
 
@@ -234,6 +252,7 @@ class ParallelMultisliceSolverBatched_3D:
         self, u_sol: np.ndarray, v_sol: np.ndarray, scan_indices: np.ndarray
     ):
         """Assembles complex gradient components via scatter-add."""
+        logger.debug("Computing Object Gradient via scatter-add...")
         local_overlap = u_sol * self.xp.conj(v_sol)
 
         if self.use_gpu and not isinstance(scan_indices, self.xp.ndarray):
@@ -267,6 +286,7 @@ class ParallelMultisliceSolverBatched_3D:
 
     def compute_gradient_probe(self, v_sol: np.ndarray) -> np.ndarray:
         """Computes the probe gradient by integrating the adjoint field at the source plane."""
+        logger.debug("Computing Probe Gradient...")
         # v_sol is (Batch, Ny, Nx, Nz)
         # Probe is at z=0
         return self.xp.mean(v_sol[..., 0], axis=0)
@@ -283,6 +303,9 @@ class ParallelMultisliceSolverBatched_3D:
         psi_init_batch: (Batch, Ny, Nx)
         scan_indices: (Batch, 2) -> [[y, x], ...]
         """
+        B = scan_indices.shape[0]
+        logger.info(f"Running Ptychography Batch ({mode} pass). Batch size: {B}")
+
         # Ensure inputs are on correct device
         if self.use_gpu:
             if not isinstance(psi_init_batch, self.xp.ndarray):
@@ -291,7 +314,6 @@ class ParallelMultisliceSolverBatched_3D:
                 scan_indices = self.xp.asarray(scan_indices)
 
         self.setup_solver(n_map)
-        B = scan_indices.shape[0]
         self._setup_batch_operators(scan_indices)
 
         # Initialize Volume S: (Batch, Ny, Nx, Nz)
@@ -303,13 +325,17 @@ class ParallelMultisliceSolverBatched_3D:
             S[..., 0] = psi_init_batch
 
         # Initial Guess
+        logger.debug("Computing initial mean-field guess...")
         b = self._apply_M_inv_adjoint(S) if mode == "adjoint" else self._apply_M_inv(S)
         u_sol = b.copy()
 
         # Iterative Solver
         if self.n_iter > 0:
+            logger.debug(
+                f"Starting {self.solver_type} solver loop ({self.n_iter} iterations)..."
+            )
             if self.solver_type == "richardson":
-                for _ in range(self.n_iter):
+                for _i in range(self.n_iter):
                     op_u = (
                         self._apply_A_adjoint(u_sol)
                         if mode == "adjoint"
@@ -349,6 +375,7 @@ class ParallelMultisliceSolverBatched_3D:
                 )
                 u_sol = u_flat.reshape(B, self.ny, self.nx, self.nz_steps)
 
+        logger.info("Batch run complete.")
         return u_sol
 
     def initialize_wavefront(self, psi_init: Optional[np.ndarray]) -> np.ndarray:
@@ -357,11 +384,13 @@ class ParallelMultisliceSolverBatched_3D:
         Uses `get_2d_airy_probe` from `generators_3d` if no init is provided.
         """
         if psi_init is not None:
+            logger.debug("Using provided initial wavefront.")
             arr = psi_init.astype(complex)
             if self.use_gpu:
                 return self.xp.asarray(arr)
             return arr
 
+        logger.info("Generating default 2D Airy probe...")
         # Use the imported generator
         # Note: The generator uses NumPy (CPU) for Bessel functions.
         # We generate on CPU then move to GPU if needed.
@@ -375,6 +404,7 @@ class ParallelMultisliceSolverBatched_3D:
         )
 
         if self.use_gpu:
+            logger.debug("Moving generated probe to GPU.")
             return self.xp.asarray(psi_cpu)
 
         return psi_cpu

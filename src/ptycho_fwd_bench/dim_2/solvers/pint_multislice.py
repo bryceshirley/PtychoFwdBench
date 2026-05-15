@@ -1,6 +1,7 @@
 from typing import Optional
 
 import numpy as np
+import scipy.sparse.linalg as spla
 
 from .base import OpticalWaveSolver
 from .utils import get_prop_kernel_perp, get_spectral_coords
@@ -23,19 +24,18 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         alpha: float = 1e-6,
         n_iter: int = 1,
         woodbury: bool = True,
+        solver_type: str = "Richardson",
     ):
         super().__init__(n_map, dx, wavelength, dz, probe_dia, probe_focus, store_beam)
-        self.n_map[:, 0] = 1.0  # Ensure first slice is free space
-        self.n_map[:, -1] = 1.0  # Ensure last slice is free space
         self.alpha = float(alpha)
         self.n_iter = n_iter
         self.woodbury = woodbury
+        self.solver_type = solver_type.upper()
 
         # Physics setup
         self.n_mean = np.mean(self.n_map)
         self.delta_n = self.n_map - self.n_mean
 
-        # Initial operator setup
         self._setup_operators()
 
     def _setup_operators(self):
@@ -65,12 +65,12 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         self._E2_coeff = self.alpha
 
         # 5. Compute Spectral Kernel
-        self._K_2d = self._get_2d_kernel()
+        self._k_2d = self._get_2d_kernel()
 
         if self.woodbury:
             k_idx = np.arange(self.nz_steps)[np.newaxis, :]
             last_slice_phase = np.exp(-2j * np.pi * k_idx / self.nz_steps)
-            H_eff = np.sum(self._K_2d * last_slice_phase, axis=1)
+            H_eff = np.sum(self._k_2d * last_slice_phase, axis=1)
             self._woodbury_kernel = 1.0 / ((1.0 / self.alpha) + H_eff)
 
     def _get_2d_kernel(self) -> np.ndarray:
@@ -112,7 +112,7 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         v_k = np.fft.fft2(v, axes=(0, 1))
 
         # 3. Kernel Multiply (Spectral)
-        v_k *= self._K_2d
+        v_k *= self._k_2d
 
         # 4. Standard 2D IFFT
         v = np.fft.ifft2(v_k, axes=(0, 1))
@@ -130,7 +130,7 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
 
         # 3. Apply Kernel with standard multiplication
         # This automatically broadcasts (Nx, 1) * (Nx, Nz) -> (Nx, Nz)
-        v_k_2d = v_k_x * self._K_2d
+        v_k_2d = v_k_x * self._k_2d
 
         # 4. Inverse 2D FFT
         v = np.fft.ifft2(v_k_2d, axes=(0, 1))
@@ -172,23 +172,58 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
 
         # 2. Richardson Update
         if self.n_iter > 0:
-            for _ in range(self.n_iter):
-                # Calculate Physical Scattering Error (E1)
-                s_obj_field = self._apply_M_inv(self._apply_E1(u_sol))
+            if self.solver_type == "RICHARDSON":
+                for _ in range(self.n_iter):
+                    # Calculate Physical Scattering Error (E1)
+                    s_obj_field = self._apply_M_inv(self._apply_E1(u_sol))
 
-                if self.woodbury:
-                    # Compute correction source at z=0
-                    s_bound_source = self._compute_woodbury_correction(
-                        b[:, -1] - s_obj_field[:, -1]
-                    )
+                    if self.woodbury:
+                        # Compute correction source at z=0
+                        s_bound_source = self._compute_woodbury_correction(
+                            b[:, -1] - s_obj_field[:, -1]
+                        )
 
-                    # Propagate this source to get the correction field
-                    s_bound_field = self._apply_M_inv_source(s_bound_source)
+                        # Propagate this source to get the correction field
+                        s_bound_field = self._apply_M_inv_source(s_bound_source)
 
-                    s_obj_field += s_bound_field
+                        s_obj_field += s_bound_field
 
-                # C. Update Solution
-                u_sol = b - s_obj_field
+                    # C. Update Solution
+                    u_sol = b - s_obj_field
+            elif self.solver_type == "GMRES":
+
+                def matvec(v):
+                    v_reshaped = v.reshape(self.nx, self.nz_steps)
+
+                    # Compute M^-1 * E1(v)
+                    s1 = self._apply_M_inv(self._apply_E1(v_reshaped))
+                    L_v = s1.copy()
+
+                    if self.woodbury:
+                        s_bound_source = self._compute_woodbury_correction(-s1[:, -1])
+                        s_bound_field = self._apply_M_inv_source(s_bound_source)
+                        L_v += s_bound_field
+
+                    # Return Operator application: (I + L)v
+                    return (v_reshaped + L_v).flatten()
+
+                A = spla.LinearOperator(
+                    (self.nx * self.nz_steps, self.nx * self.nz_steps),
+                    matvec=matvec,
+                    dtype=np.complex128,
+                )
+
+                # Solve using the correct effective RHS
+                u_sol_flat, _ = spla.gmres(
+                    A,
+                    u_sol.flatten(),
+                    x0=u_sol.flatten(),
+                    rtol=1e-10,
+                    maxiter=self.n_iter,
+                )
+                u_sol = u_sol_flat.reshape(self.nx, self.nz_steps)
+            else:
+                raise ValueError(f"Unsupported solver type: {self.solver_type}")
 
         return u_sol
 
@@ -209,6 +244,8 @@ class ParallelMultisliceSolver(OpticalWaveSolver):
         """
         Runs the solver.
         """
+        # Initial operator setup
+
         psi_0 = self.initialize_wavefront(psi_init)
 
         self._propagate_and_store(psi_0)

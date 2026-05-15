@@ -96,10 +96,6 @@ class ParallelMultisliceSolver_MGZ(ParallelMultisliceSolver):
         # ==========================================
         # LEVEL 0: COARSE GRID
         # ==========================================
-        logging.info(
-            f"FMG Level 0 ('Coarse'): Restricting Z by factor {self.coarsening_factor}..."
-        )
-
         # Restrict map in both X and Z
         coarse_map = self._restrict_map_factor(self.n_map, self.coarsening_factor)
         coarse_dz = self.dz * float(self.coarsening_factor)

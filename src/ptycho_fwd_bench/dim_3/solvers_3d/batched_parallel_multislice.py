@@ -1,4 +1,10 @@
+import logging
+
 import numpy as np
+
+from ptycho_fwd_bench.dim_2.solvers.utils import get_spectral_coords
+
+logger = logging.getLogger(__name__)
 
 try:
     import cupy as cp
@@ -7,8 +13,6 @@ try:
 except ImportError:
     cp = None
     HAS_GPU = False
-
-from ptycho_fwd_bench.dim_2.utils.utils import get_spectral_coords
 
 
 class ParallelSTEMSolver:
@@ -27,6 +31,11 @@ class ParallelSTEMSolver:
         self.gpu_id = gpu_id
 
         self.alpha = self.real_t(alpha)
+
+        logger.debug(
+            f"Initializing ParallelSTEMSolver: Grid={calc_shape}, GPU={self.use_gpu} (ID={gpu_id})"
+        )
+
         self._init_static_kernels()
         self._u0_static = None  # Precomputed mean-field predictor
 
@@ -37,6 +46,7 @@ class ParallelSTEMSolver:
 
     def _init_static_kernels(self):
         """Initializes shifted propagator and 3D dispersion kernel."""
+        logger.debug("Building static 3D dispersion kernels...")
         with self._device_context():
             kx = get_spectral_coords(self.nx, self.dx, "FFT")
             ky = get_spectral_coords(self.ny, self.dx, "FFT")
@@ -61,6 +71,9 @@ class ParallelSTEMSolver:
             denom = 1.0 - lam_alpha[None, None, :] * H[:, :, None]
             self.K_3d = (1.0 / denom).astype(self.complex_t)[None, ...]
 
+            kernel_mb = self.K_3d.nbytes / (1024**2)
+            logger.debug(f"3D Kernel generated. Memory footprint: {kernel_mb:.2f} MB")
+
     def _twisted_fft_3d(self, u, inverse=False):
         """Implementation of the Twisted 3D FFT"""
         L = self.nz_steps
@@ -79,6 +92,7 @@ class ParallelSTEMSolver:
 
     def precompute_probe(self, probe_init):
         """Computes the static u0 predictor (mean-field solve)."""
+        logger.info("Precomputing mean-field predictor (u0) for the probe...")
         with self._device_context():
             psi = self.xp.asarray(probe_init, dtype=self.complex_t)
 
@@ -91,20 +105,28 @@ class ParallelSTEMSolver:
             v = self._twisted_fft_3d(S)
             v *= self.K_3d  # Propagate through mean potential
             self._u0_static = self._twisted_fft_3d(v, inverse=True)
+            logger.debug("Mean-field predictor successfully precomputed and cached.")
 
     def run_scan(self, large_n_map, positions, batch_size=1, n_iter=3):
         """Main batch solver using Richardson Iteration."""
         if self._u0_static is None:
+            logger.error("Attempted to run scan without precomputing the probe.")
             raise ValueError("Must call precompute_probe before run_scan.")
 
+        num_pos = len(positions)
+        logger.info(
+            f"Starting parallel scan: {num_pos} positions, batch_size={batch_size}, n_iter={n_iter}"
+        )
+
         if self.use_gpu:
+            logger.debug("Clearing GPU memory pool before scan block...")
             self.xp.get_default_memory_pool().free_all_blocks()
 
-        num_pos = len(positions)
         results = np.zeros((num_pos, self.nx, self.ny), dtype=self.complex_t)
         hx, hy = self.nx // 2, self.ny // 2
 
         with self._device_context():
+            logger.debug("Transferring full potential map to target device...")
             n_map = self.xp.asarray(large_n_map, dtype=self.complex_t)
 
             for b0 in range(0, num_pos, batch_size):
@@ -142,4 +164,5 @@ class ParallelSTEMSolver:
 
                 results[b0:b1] = self.xp.asnumpy(u[:, :, :, -1])
 
+        logger.info("Scan complete.")
         return results

@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from .utils import get_spectral_coords
+from ptycho_fwd_bench.dim_2.solvers.utils import get_spectral_coords
 
 try:
     import cupy as cp

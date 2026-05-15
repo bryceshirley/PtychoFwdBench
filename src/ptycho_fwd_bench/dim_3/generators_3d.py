@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.ndimage import zoom
 from scipy.special import j1, jn_zeros
 
 # =============================================================================
@@ -72,3 +73,23 @@ def get_2d_airy_probe(nx, ny, dx, diameter, focus, wavelength):
         delta_path = np.sqrt(dist**2 + r**2) - dist
         phase = np.exp(1j * sign * k0 * delta_path)
     return (amplitude * phase).astype(np.complex128)
+
+
+def interpolate_to_coarse_3d(n_map_fine: np.ndarray, n_steps_coarse: int) -> np.ndarray:
+    """
+    Downsamples the 3D refractive index map strictly in the propagation direction (Z).
+
+    Used to create coarse-stepped approximations for benchmarking.
+
+    Args:
+        n_map_fine (np.ndarray): Original high-resolution 3D map of shape (Ny, Nx, Nz).
+        n_steps_coarse (int): Target number of steps in the propagation dimension.
+
+    Returns:
+        np.ndarray: The downsampled 3D map.
+    """
+    ny, nx, nz_fine = n_map_fine.shape
+    zoom_factor = n_steps_coarse / nz_fine
+
+    # Zoom factors: 1.0 for Y, 1.0 for X, zoom_factor for Z
+    return zoom(n_map_fine, (1.0, 1.0, zoom_factor), order=1)

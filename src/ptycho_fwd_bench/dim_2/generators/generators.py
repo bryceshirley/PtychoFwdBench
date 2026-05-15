@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from scipy.ndimage import gaussian_filter, zoom
 from scipy.special import j1, jn_zeros
@@ -79,8 +81,8 @@ def generate_blob_phantom(
     n_blobs: int = 100,
     rx_range: tuple = None,
     rz_range: tuple = None,
-    pad_x: int = None,
-    pad_z: int = None,
+    pad_x: int = 0,
+    pad_z: int = 0,
     seed: int = 42,
 ) -> np.ndarray:
     """
@@ -184,30 +186,45 @@ def generate_waveguide_phantom(
     beta_n: float = 0.0,
     width_um: float = 10.0,
     dx: float = 1.0,
+    dz: float = 1.0,
+    z_free_um: Optional[float] = None,  # Set to None to allow dynamic calculation
     **kwargs,
 ) -> np.ndarray:
     """
-    Generates a simple straight waveguide channel centered in the grid.
-
-    Args:
-        nx (int): Transverse grid size.
-        nz (int): Propagation grid size.
-        n_background (float): Cladding refractive index.
-        delta_n (float): Core refractive index difference (n_core = n_bg + delta_n).
-        beta_n (float): Core absorption.
-        width_um (float): Width of the waveguide core in microns.
-        dx (float): Pixel size in microns.
-        **kwargs: Additional arguments passed by the runner are ignored.
-
-    Returns:
-        np.ndarray: The generated refractive index map.
+    Generates a straight waveguide channel.
+    If z_free_um is None, it defaults to placing free space (vacuum/immersion)
+    over the first 25% and the last 25% of the total physical grid length.
     """
-    n_map = generate_empty_phantom(nx, nz, n_background)
+    # 1. Start with a homogeneous background (cladding)
+    n_map = np.full((nx, nz), n_background, dtype=np.complex128)
+
+    # 2. Add the core
     width_pixels = int(width_um / dx)
     center_x = nx // 2
-    start = center_x - width_pixels // 2
-    end = center_x + width_pixels // 2
-    n_map[start:end, :] += delta_n + 1j * beta_n
+    start_x = center_x - width_pixels // 2
+    end_x = center_x + width_pixels // 2
+    n_map[start_x:end_x, :] += delta_n + 1j * beta_n
+
+    # 3. Calculate total physical length
+    # z_coords span from 0 to (nz - 1) * dz
+    total_length = (nz - 1) * dz
+
+    # 4. Default to a quarter of the total length if not specified
+    if z_free_um is None:
+        z_free_um = total_length / 8.0
+
+    # 5. Apply physical z_free regions at the start and end
+    if z_free_um > 0:
+        z_coords = np.arange(nz) * dz
+
+        # Create boolean masks for the free space regions
+        start_free_mask = z_coords < z_free_um
+        end_free_mask = z_coords > (total_length - z_free_um)
+
+        # Overwrite these specific physical regions with 1.0 (vacuum/free space)
+        n_map[:, start_free_mask] = 1.0
+        n_map[:, end_free_mask] = 1.0
+
     return n_map
 
 

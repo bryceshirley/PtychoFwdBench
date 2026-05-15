@@ -1,6 +1,10 @@
 from typing import Optional
 
-import numpy as np
+# Use cupy if available, otherwise fallback to numpy
+try:
+    import cupy as xp
+except ImportError:
+    import numpy as xp
 
 from .base import OpticalWaveSolver
 from .utils import apply_spectral_kernel, get_prop_kernel_perp, get_spectral_coords
@@ -12,7 +16,7 @@ class MultisliceSolver(OpticalWaveSolver):
 
     Parameters
     ----------
-    n_map : np.ndarray
+    n_map : xp.ndarray
         Complex refractive index map of shape (nx, nz_steps).
     dx : float
         Spatial sampling interval in x (um).
@@ -34,7 +38,7 @@ class MultisliceSolver(OpticalWaveSolver):
 
     def __init__(
         self,
-        n_map: np.ndarray,
+        n_map: xp.ndarray,
         dx: float,
         wavelength: float,
         probe_dia: float,
@@ -51,7 +55,7 @@ class MultisliceSolver(OpticalWaveSolver):
         if self.symmetric:
             self._perp_kernel_half = self._get_propagation_kernel(self.dz / 2.0)
 
-    def _get_propagation_kernel(self, dz: float) -> np.ndarray:
+    def _get_propagation_kernel(self, dz: float) -> xp.ndarray:
         kx = get_spectral_coords(self.nx, self.dx, self.transform_type)
 
         # Standard vacuum propagator: exp(i * sqrt(k0^2 - kx^2) * z)
@@ -59,15 +63,15 @@ class MultisliceSolver(OpticalWaveSolver):
 
     def _propagate_and_store(
         self,
-        psi: np.ndarray,
-    ) -> np.ndarray:
+        psi: xp.ndarray,
+    ) -> xp.ndarray:
         """
         Internal multislice physics loop.
         """
 
         # Reset history storage if saving is enabled for this pass
         if self.store_beam:
-            self.beam_history = np.zeros((self.nx, self.nz_steps), dtype=complex)
+            self.beam_history = xp.zeros((self.nx, self.nz_steps), dtype=complex)
             self.beam_history[:, 0] = psi
 
         for i in range(self.nz_steps):
@@ -78,7 +82,7 @@ class MultisliceSolver(OpticalWaveSolver):
             # 2. Phase (Refraction)
             # Apply phase shift for this slice
             n_slice = self.n_map[:, i]
-            psi *= np.exp(1j * self.k0 * (n_slice - 1.0) * self.dz)
+            psi *= xp.exp(1j * self.k0 * (n_slice - 1.0) * self.dz)
 
             # 3. Half-step Propagate (Vacuum)
             if self.symmetric:
@@ -91,7 +95,7 @@ class MultisliceSolver(OpticalWaveSolver):
 
     def run(
         self,
-        psi_init: Optional[np.ndarray] = None,
+        psi_init: Optional[xp.ndarray] = None,
     ):
         """
         Runs the solver.

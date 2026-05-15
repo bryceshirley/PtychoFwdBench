@@ -28,6 +28,8 @@ dependencies = [
     "tqdm>=4.67.1",
     "pywavelets>=1.6.0",
     "ipykernel>=6.31.0",
+    "torch>=2.8.0",
+    "ffmpeg>=1.4",
 ]
 
 [build-system]

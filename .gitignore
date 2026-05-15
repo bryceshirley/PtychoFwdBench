@@ -2,11 +2,14 @@
 # Ignore the results folder where benchmark figures and configs are saved
 results/
 recon_results/
+results_3d/
+data/
 
 # Ignore generated images and transient data files
 *.png
 *.pff
 ptycho_fwd_bench/pyram/Tests/tl.line
+*.deb
 
 # Ruff cache directory
 .ruff_cache/

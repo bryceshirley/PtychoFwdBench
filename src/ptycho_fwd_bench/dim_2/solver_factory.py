@@ -3,12 +3,13 @@ from typing import Any, Dict
 import numpy as np
 
 from ptycho_fwd_bench.dim_2.solvers import (
-    ExactParallelSolver,
     FiniteDifferencePadeSolver,
+    FiniteDifferencePadeSumSolver,
     MultisliceSolver,
     ParallelMultisliceSolver,
     ParallelMultisliceSolver_FMG,
     ParallelMultisliceSolver_MGZ,
+    ParallelMultisliceSolverASM,
     SpectralCrankNicolsonSolver,
     SpectralPadeSolver,
     WaveletMultisliceSolver,
@@ -51,6 +52,13 @@ def create_solver(
             beam_store_resolution=store_res,
         )
 
+    elif s_type == "PADE_SUM":
+        return FiniteDifferencePadeSumSolver(
+            **common_args,
+            pade_order=solver_params.get("pade_order", 8),
+            envelope=solver_params.get("envelope", False),
+        )
+
     elif s_type == "SPECTRAL_PADE":
         return SpectralPadeSolver(
             **common_args,
@@ -59,7 +67,7 @@ def create_solver(
             envelope=solver_params.get("envelope", False),
             mode=solver_params.get("mode", "spectral"),
             transform_type=solver_params.get("transform_type", "FFT"),
-            solver_type=solver_params.get("solver_type", "richardson"),
+            solver_type=solver_params.get("solver_type", "gmres"),
             preconditioner=solver_params.get("preconditioner", "split_step"),
         )
 
@@ -76,6 +84,13 @@ def create_solver(
             alpha=solver_params.get("alpha", 1e-3),
             n_iter=solver_params.get("n_iter", 2),
             woodbury=solver_params.get("woodbury", True),
+            solver_type=solver_params.get("solver_type", "Richardson"),
+        )
+
+    elif s_type == "PARAMS_ASM":
+        return ParallelMultisliceSolverASM(
+            **common_args,
+            n_iter=solver_params.get("n_iter", 2),
         )
 
     elif s_type == "PARAMS_FMG":
@@ -100,19 +115,12 @@ def create_solver(
         wavelet_solver = WaveletMultisliceSolver(
             **common_args,
             symmetric=solver_params.get("symmetric", True),
-            wavelet_name=solver_params.get("wavelet_name", "db4"),
-            compression_threshold=solver_params.get("compression_threshold", 1e-5),
+            wv_family=solver_params.get("wv_family", "sym6"),
+            wv_level=solver_params.get("wv_level", 3),
+            v_s=solver_params.get("v_s", 1e-4),
         )
-        wavelet_solver.build_propagator_matrix()
+        wavelet_solver.build_propagator_matrix()  # Ensure the matrix is built before returning
         return wavelet_solver
-
-    elif s_type == "EXACTPARALLEL":
-        return ExactParallelSolver(
-            **common_args,
-            alpha=solver_params.get("alpha", 1e-6),
-            n_iter=solver_params.get("n_iter", 2),
-            solver_type=solver_params.get("solver_type", "gmres"),
-        )
 
     elif s_type == "SPECTRAL_CN":
         return SpectralCrankNicolsonSolver(

@@ -58,7 +58,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
         probe_dia: float = 0,
         probe_focus: float = 0,
         pade_order: int = 4,
-        transform_type: str = "DST",
+        transform_type: str = "FFT",
         n_iter: int = 2,
         store_beam: bool = False,
         envelope: bool = False,
@@ -156,7 +156,10 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         if self.preconditioner == "split_step":
             # M^-1 ~ (1+bN)^-1 (1+bL)^-1
-
+            # A = (I+bL)(I+bN) - b^2 L N
+            # M^-1 A = I + b^2 (1+bN)^-1 L (1+bL)^-1 N
+            # L = F^-1 P F, (1+bL) = F^-1 (1+bP) F, so (1+bL)^-1 = F^-1 (1+bP)^-1 F
+            # M^-1 A = I + b^2 (1 + bN)^-1 F^-1 (P/(1+bP)) F N, where P/(1+bP) is the modified spectral kernel for the correction term
             # Inverse L (Spectral)
             with np.errstate(divide="ignore", invalid="ignore"):
                 inv_L_kern = 1.0 / M_L_kernel
@@ -175,7 +178,10 @@ class SpectralPadeSolver(OpticalWaveSolver):
                 return out.ravel()
 
         elif self.preconditioner == "shifted_mean":
-            # M^-1 ~ (1 + bL + b*mean(N))^-1
+            # M^-1 ~ (1 + bL + b*mean(N))^-1 = F^-1 (1 + bP + b*mean(N))^-1 F
+            # A = I + bL + b*mean(N) + b perb_N
+            # M^-1 A = I + b M^-1 perb_N, where perb_N = N - mean(N)
+            #        = I + b F^-1 (1 + bP + b*mean(N))^-1 F perb_N
             N_mean = np.mean(N_vals)
             shifted_kernel = 1.0 + b_diff * self.Lambda + b_j * N_mean
 
@@ -186,26 +192,6 @@ class SpectralPadeSolver(OpticalWaveSolver):
             def matvec_M_inv(x_vec):
                 x_grid = x_vec.reshape(n_size)
                 out = self._apply_diffraction(x_grid, inv_shifted_kernel)
-                return out.ravel()
-
-        elif self.preconditioner == "additive":
-            # M^-1 ~ (1+bN)^-1 + (1+bL)^-1 - I
-
-            # Inverse L
-            with np.errstate(divide="ignore", invalid="ignore"):
-                inv_L_kern = 1.0 / M_L_kernel
-                inv_L_kern[np.isclose(M_L_kernel, 0)] = 0.0
-
-            # Inverse N
-            with np.errstate(divide="ignore", invalid="ignore"):
-                inv_N_vals = 1.0 / M_N_vals
-                inv_N_vals[np.isclose(M_N_vals, 0)] = 0.0
-
-            def matvec_M_inv(x_vec):
-                x_grid = x_vec.reshape(n_size)
-                term1 = x_grid * inv_N_vals
-                term2 = self._apply_diffraction(x_grid, inv_L_kern)
-                out = term1 + term2 - x_grid
                 return out.ravel()
 
         else:
@@ -240,7 +226,7 @@ class SpectralPadeSolver(OpticalWaveSolver):
 
         def matvec_A(x_vec):
             x_grid = x_vec.reshape(n_size)
-            # A = I + bL + bN
+            # A = I + bL + bN = (I+bL)(I+bN) - b^2 L N
             term_L = b_diff * self._apply_diffraction(x_grid, self.Lambda)
             term_N = b_j * N_vals * x_grid
             return (x_grid + term_L + term_N).ravel()
@@ -260,9 +246,6 @@ class SpectralPadeSolver(OpticalWaveSolver):
             w_j: Solution for the j-th Pade term (np.ndarray)
         """
         # 1. Get Preconditioner Operator and the Full Direct Operator
-        #     This is a implementation isn't always optimal as the inverse
-        #     spectral operator in M can cancel out one in A, leading to
-        #     two less fourier transforms. We admit that case for now.
         b_diff = b_j / self.k0sq
         A_op = self._get_direct_op(b_j, b_diff, N_vals)
         M_op = self._get_preconditioner_op(b_j, b_diff, N_vals)
@@ -300,6 +283,19 @@ class SpectralPadeSolver(OpticalWaveSolver):
                 maxiter=self.n_iter,
                 callback=callback,
             )
+        elif self.solver_type == "richardson":
+            # Simple Richardson iteration:
+            # x_{k+1} = x_k + M^-1 (b - A x_k)
+            #         = x_k + M^-1 b - M^-1 A x_k
+            #          = x_k + x_0 - M^-1 A x_k
+            #          = x_0 + (I - (I + M^-1 V)) x_k, where A = M + V
+            #          = x_0 + M^-1 V x_k
+            # V depends on the preconditioner choice.
+            V = N_vals - np.mean(N_vals)
+            w_flat = x0.copy()
+            for _ in range(self.n_iter):
+                w_flat = x0 + M_op.matvec(V * w_flat)  # Update step
+                iter_count += 1
         else:
             raise ValueError(f"Unknown solver type: {self.solver_type}")
 

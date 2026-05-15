@@ -1,0 +1,64 @@
+experiment:
+  name: "BLOBS"
+  description: "Standard random soft blobs High Scatter."
+
+physics:
+  wavelength_um: 0.00635
+  probe_dia_um: 1.0
+  probe_focus_um: -5.0
+
+grid:
+  n_physical: 1024
+  n_padding: 512
+  physical_width_um: 15.0
+
+sample:
+  type: "BLOBS"
+  thickness_um: 40.0
+
+  # Ground Truth Settings (Reference Solution)
+  ground_truth:
+    n_prop_fine: 200      # High-res propagation steps for reference
+    solver_type: "PADE"    # Which algorithm to trust as "truth"
+    solver_params:
+      pade_order: 8
+
+    save_file: "./data/blobs_gt_ref.npz"
+
+    # load_file: "./data/blobs_gt_ref.npz"
+
+  # Sample Generator Parameters
+  params:
+    n_background: 1.0
+    delta_n: 1e-2         # Scattering strength
+    beta_n: 1e-3         # Absorption
+    n_blobs: 50
+
+# Benchmarking List
+# List as many solvers as desired for comparison
+solvers:
+  - name: "Multislice (FFT)"
+    type: "MULTISLICE"
+    solver_params:
+      transform_type: "FFT"
+      symmetric: False
+
+  - name: "Pade (Order 8)"
+    type: "PADE"
+    solver_params:
+      pade_order: 8
+
+  - name: "Spectral Pade (Order 8)"
+    type: "SPECTRAL_PADE"
+    solver_params:
+      pade_order: 8
+      n_iter: 50
+
+  - name: "Pade Sum (Order 8)"
+    type: "PADE_SUM"
+    solver_params:
+      pade_order: 8
+
+benchmark:
+  step_counts: [4,8,16,32,64]
+  save_beam_idx: -1
